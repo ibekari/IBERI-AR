@@ -183,6 +183,7 @@
   >
     <a-assets>
       <img id="charImg" src="./assets/character.png" crossorigin="anonymous" />
+      <img id="charImg2" src="./assets/character2.png" crossorigin="anonymous" />
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
@@ -193,8 +194,9 @@
            camera by the "stand-on-ground" component, and its position is
            low-pass filtered to damp tracking tremor. -->
       <a-entity id="floatGroup" position="0 0 0" stand-on-ground>
-        <!-- standing character, aspect ratio matches the source image (2545 x 2270).
-             pivot is the image centre, so REST_Y in the script lifts the feet to the marker. -->
+        <!-- standing character. src / height / bubble text are chosen at random
+             from VARIANTS each time the marker is found (see the script).
+             pivot is the image centre, so restY in the script lifts the feet to the marker. -->
         <a-image
           id="charEntity"
           src="#charImg"
@@ -389,18 +391,40 @@
   "use strict";
 
   // ---------- 1. build the speech-bubble texture on a canvas ----------
-  function buildBubbleTexture(text) {
-    const scale = 4; // supersample for crisp text
-    const w = 520 * scale, h = 240 * scale;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
+  // Accepts multi-line text ("\n"). Auto-shrinks the font so the widest line
+  // fits, grows the bubble for extra lines, and returns the texture plus its
+  // aspect ratio so the <a-image> can be sized to match.
+  const BUBBLE_FONT =
+    '"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic","YuGothic",sans-serif';
 
-    const pad = 24 * scale;
-    const bodyW = w - pad * 2;
-    const bodyH = h - pad * 2 - 30 * scale;
-    const radius = 40 * scale;
+  function buildBubbleTexture(text) {
+    const S = 4; // supersample for crisp text
+    const lines = String(text).split("\n");
+    const W = 520 * S;
+    const pad = 22 * S; // margin around the body (room for the drop shadow)
+    const bodyW = W - pad * 2;
+    const sidePad = 34 * S; // text inset inside the body
+    const maxTextW = bodyW - sidePad * 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = 10;
+    let ctx = canvas.getContext("2d");
+
+    let font = 60 * S;
+    ctx.font = `bold ${font}px ${BUBBLE_FONT}`;
+    let widest = 1;
+    for (const l of lines) widest = Math.max(widest, ctx.measureText(l).width);
+    if (widest > maxTextW) font = Math.max(30 * S, font * (maxTextW / widest));
+
+    const lineH = font * 1.36;
+    const textBlockH = lineH * lines.length;
+    const bodyH = textBlockH + 34 * S * 2;
+    const radius = 36 * S;
+    const H = pad + bodyH + 56 * S; // extra room for the tail hanging below
+
+    canvas.height = H;
+    ctx = canvas.getContext("2d");
 
     function roundRectPath(x, y, ww, hh, r) {
       ctx.beginPath();
@@ -412,13 +436,11 @@
       ctx.closePath();
     }
 
-    // shadow
+    // shadow + body
     ctx.save();
     ctx.shadowColor = "rgba(90, 60, 30, 0.35)";
-    ctx.shadowBlur = 18 * scale;
-    ctx.shadowOffsetY = 8 * scale;
-
-    // bubble body
+    ctx.shadowBlur = 18 * S;
+    ctx.shadowOffsetY = 8 * S;
     roundRectPath(pad, pad, bodyW, bodyH, radius);
     ctx.fillStyle = "#fff7ec";
     ctx.fill();
@@ -426,7 +448,7 @@
 
     // outline
     roundRectPath(pad, pad, bodyW, bodyH, radius);
-    ctx.lineWidth = 8 * scale;
+    ctx.lineWidth = 8 * S;
     ctx.strokeStyle = "#c2793a";
     ctx.stroke();
 
@@ -434,32 +456,34 @@
     const tailX = pad + bodyW * 0.28;
     const tailY = pad + bodyH;
     ctx.beginPath();
-    ctx.moveTo(tailX - 26 * scale, tailY - 4 * scale);
-    ctx.lineTo(tailX + 10 * scale, tailY - 4 * scale);
-    ctx.lineTo(tailX - 8 * scale, tailY + 46 * scale);
+    ctx.moveTo(tailX - 26 * S, tailY - 4 * S);
+    ctx.lineTo(tailX + 10 * S, tailY - 4 * S);
+    ctx.lineTo(tailX - 8 * S, tailY + 46 * S);
     ctx.closePath();
     ctx.fillStyle = "#fff7ec";
     ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(tailX - 26 * scale, tailY - 2 * scale);
-    ctx.lineTo(tailX - 8 * scale, tailY + 46 * scale);
-    ctx.lineTo(tailX + 8 * scale, tailY - 2 * scale);
-    ctx.lineWidth = 8 * scale;
+    ctx.moveTo(tailX - 26 * S, tailY - 2 * S);
+    ctx.lineTo(tailX - 8 * S, tailY + 46 * S);
+    ctx.lineTo(tailX + 8 * S, tailY - 2 * S);
+    ctx.lineWidth = 8 * S;
     ctx.strokeStyle = "#c2793a";
     ctx.lineJoin = "round";
     ctx.stroke();
     // cover the seam where tail meets body
     ctx.fillStyle = "#fff7ec";
-    ctx.fillRect(pad + 6 * scale, pad + bodyH - 10 * scale, bodyW - 12 * scale, 8 * scale);
+    ctx.fillRect(pad + 6 * S, pad + bodyH - 10 * S, bodyW - 12 * S, 8 * S);
 
     // text
     ctx.fillStyle = "#a85a25";
-    ctx.font = `bold ${64 * scale}px "Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic",sans-serif`;
+    ctx.font = `bold ${font}px ${BUBBLE_FONT}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, w / 2, pad + bodyH / 2 - 4 * scale);
+    const cx = W / 2;
+    const firstY = pad + (bodyH - textBlockH) / 2 + lineH / 2;
+    lines.forEach((ln, i) => ctx.fillText(ln, cx, firstY + i * lineH));
 
-    return canvas.toDataURL("image/png");
+    return { url: canvas.toDataURL("image/png"), aspect: W / H };
   }
 
   // ---------- 2. animation helper (ease-out-back "pop") ----------
@@ -487,18 +511,43 @@
   const bubbleWrap = document.querySelector("#bubble");
   const bubbleImg = document.querySelector("#bubbleImg");
 
+  // The two things that can pop up. `h` = source image height / width, used to
+  // stand the character with its feet on the marker.
+  const VARIANTS = [
+    { img: "#charImg", h: 0.892, text: "ありがとな〜" },
+    { img: "#charImg2", h: 0.907, text: "イベリアラカルト\n楽しんでや〜" },
+  ];
+  const BUBBLE_W = 0.9; // world width of the speech bubble plane
+  const RISE = 0.28; // how far below its resting spot the character starts
+  // resting height: half the character height, so the feet sit on the marker plane
+  let restY = VARIANTS[0].h / 2;
+
+  function applyBubble(text) {
+    const { url, aspect } = buildBubbleTexture(text);
+    const h = BUBBLE_W / aspect;
+    bubbleImg.setAttribute("width", BUBBLE_W);
+    bubbleImg.setAttribute("height", h);
+    bubbleImg.setAttribute("src", url);
+    // keep the tail tip just above the character's head as the bubble grows
+    bubbleWrap.setAttribute("position", `0.12 ${(0.99 + h / 2).toFixed(3)} 0.02`);
+  }
+
+  function applyVariant(v) {
+    restY = v.h / 2;
+    charEntity.setAttribute("width", 1);
+    charEntity.setAttribute("height", v.h);
+    charEntity.setAttribute("src", v.img);
+    applyBubble(v.text);
+  }
+
   function setBubbleTexture() {
-    bubbleImg.setAttribute("src", buildBubbleTexture("ありがとな〜"));
+    applyVariant(VARIANTS[0]);
   }
   if (sceneEl.hasLoaded) setBubbleTexture();
   else sceneEl.addEventListener("loaded", setBubbleTexture);
 
   let charAnimId = 0;
   let bubbleAnimId = 0;
-
-  // resting height: half the character height, so the feet sit on the marker plane
-  const REST_Y = 0.446;
-  const RISE = 0.28; // how far below the resting spot it starts
 
   function showContent() {
     const myChar = ++charAnimId;
@@ -509,7 +558,7 @@
       duration: 700,
       onUpdate: (e) => {
         if (myChar !== charAnimId) return;
-        const y = REST_Y - RISE * (1 - e); // rises up to standing height
+        const y = restY - RISE * (1 - e); // rises up to standing height
         charEntity.setAttribute("position", `0 ${y} 0`);
         charEntity.setAttribute("opacity", Math.min(1, e * 1.2));
       },
@@ -533,13 +582,15 @@
     charAnimId++;
     bubbleAnimId++;
     charEntity.setAttribute("opacity", 0);
-    charEntity.setAttribute("position", `0 ${REST_Y - RISE} 0`);
+    charEntity.setAttribute("position", `0 ${restY - RISE} 0`);
     bubbleWrap.setAttribute("visible", "false");
     bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
   }
 
   targetEl.addEventListener("targetFound", () => {
     document.getElementById("hint").classList.add("hidden");
+    // pick one of the two at random each time the marker is (re)found
+    applyVariant(VARIANTS[Math.random() < 0.5 ? 0 : 1]);
     showContent();
   });
   targetEl.addEventListener("targetLost", () => {
