@@ -103,7 +103,7 @@
   <div id="hint" class="hidden"><span>絵にカメラをゆっくり近づけてください</span></div>
 
   <a-scene
-    mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; uiScanning: yes; uiLoading: no; filterMinCF: 0.00005; filterBeta: 300;"
+    mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; uiScanning: yes; uiLoading: no; filterMinCF: 0.00001; filterBeta: 1000;"
     color-space="sRGB"
     renderer="colorManagement: true, physicallyCorrectLights"
     vr-mode-ui="enabled: false"
@@ -117,10 +117,11 @@
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
 
     <a-entity id="target" mindar-image-target="targetIndex: 0">
-      <!-- floatGroup is kept upright and turned to face the camera by the
-           "billboard-upright" component, so with the marker lying flat on the
-           ground the character appears to stand vertically on it. -->
-      <a-entity id="floatGroup" position="0 0 0" billboard-upright>
+      <!-- floatGroup is held vertical (using the phone's gravity sensor when
+           available, otherwise the marker's own normal) and turned to face the
+           camera by the "stand-on-ground" component, and its position is
+           low-pass filtered to damp tracking tremor. -->
+      <a-entity id="floatGroup" position="0 0 0" stand-on-ground>
         <!-- standing character, aspect ratio matches the source image (2545 x 2270).
              pivot is the image centre, so REST_Y in the script lifts the feet to the marker. -->
         <a-image
@@ -144,70 +145,152 @@
 
 <script>
   /*
-   * billboard-upright
-   * -----------------
-   * Keeps an entity standing along the marker's own "up" axis (the image
-   * target's +Z, which points straight out of the printed marker) and yaws it
-   * around that axis so its front always faces the camera.
-   *
-   * With the marker laid flat on the ground, +Z points at the sky, so the
-   * character looks like it is standing vertically on the marker instead of
-   * lying flat on it.
+   * Gravity ("true up") tracking.
+   * --------------------------------
+   * MindAR keeps the scene camera at the origin, aligned with the device, so a
+   * vector expressed in the device frame is also valid in the scene world.
+   * We take the phone's real orientation from the deviceorientation sensor
+   * (same math as three's DeviceOrientationControls), and from it derive which
+   * way is really "up", so the character can stand along gravity instead of
+   * along a slightly tilted marker. Falls back silently when no sensor / no
+   * permission — the component then uses the marker normal instead.
    */
-  AFRAME.registerComponent("billboard-upright", {
+  window.__worldUp = null;
+  (function () {
+    const zee = new THREE.Vector3(0, 0, 1);
+    const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+    const euler = new THREE.Euler();
+    const q0 = new THREE.Quaternion();
+    const devQ = new THREE.Quaternion();
+    const smooth = new THREE.Vector3();
+    let have = false;
+    const rad = (d) => (d * Math.PI) / 180;
+
+    function screenAngle() {
+      const a =
+        (screen.orientation && screen.orientation.angle) ||
+        window.orientation ||
+        0;
+      return rad(a);
+    }
+    function onOrient(e) {
+      if (e.alpha == null || e.beta == null || e.gamma == null) return;
+      euler.set(rad(e.beta), rad(e.alpha), -rad(e.gamma), "YXZ");
+      devQ.setFromEuler(euler);
+      devQ.multiply(q1);
+      devQ.multiply(q0.setFromAxisAngle(zee, -screenAngle()));
+      // Earth up (world +Y for DeviceOrientationControls) in the device frame
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(devQ.clone().invert());
+      if (!Number.isFinite(up.x) || up.lengthSq() < 0.1) return;
+      if (!have) { smooth.copy(up); have = true; }
+      else smooth.lerp(up, 0.08); // heavy low-pass; real gravity drifts slowly
+      if (!window.__worldUp) window.__worldUp = new THREE.Vector3();
+      window.__worldUp.copy(smooth).normalize();
+    }
+    window.__enableTilt = function () {
+      const req =
+        window.DeviceOrientationEvent &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+          ? DeviceOrientationEvent.requestPermission().catch(() => "denied")
+          : Promise.resolve("granted");
+      req.then((s) => {
+        if (s === "granted" || s === undefined) {
+          window.addEventListener("deviceorientation", onOrient, true);
+        }
+      });
+    };
+  })();
+
+  /*
+   * stand-on-ground
+   * ---------------
+   * Makes the entity stand vertically where the marker is and face the camera:
+   *   - "up"      : gravity (see above) when it roughly agrees with the marker,
+   *                 otherwise the marker normal.
+   *   - "forward" : slow follow of the horizontal direction to the camera;
+   *                 frozen when the camera is almost straight overhead.
+   *   - position  : exponential smoothing of the tracked marker position.
+   *   - rotation  : slerp toward the target (~0.4 s), so tracking tremor is
+   *                 low-pass filtered instead of shown frame by frame.
+   * The marker's own rotation noise cancels out: the entity's *world*
+   * orientation is rebuilt each frame from stable vectors.
+   */
+  AFRAME.registerComponent("stand-on-ground", {
     init: function () {
-      this._target = new THREE.Quaternion();
-      this._settled = false;
+      this._worldQ = new THREE.Quaternion();
+      this._fwd = new THREE.Vector3();
+      this._pos = new THREE.Vector3();
+      this._ready = false;
     },
     tick: function (time, dt) {
       const obj = this.el.object3D;
       const cam = this.el.sceneEl && this.el.sceneEl.camera;
-      // Only meaningful while the marker is being tracked. Before the first
-      // detection MindAR leaves the target matrix uninitialised, which would
-      // otherwise feed NaN into the orientation below.
+      // Before the first detection MindAR leaves the target matrix
+      // uninitialised, which would feed NaN into everything below.
       if (!cam || !obj.parent || !obj.visible) {
-        this._settled = false; // snap on the next re-acquire
+        this._ready = false;
         return;
       }
-
-      const camWorld = new THREE.Vector3();
-      cam.getWorldPosition(camWorld);
-
-      const selfWorld = new THREE.Vector3();
-      obj.getWorldPosition(selfWorld);
+      const fin = (v) => v.toArray().every(Number.isFinite);
+      const step = Math.min(0.1, (dt || 16) / 1000);
 
       const parentQ = new THREE.Quaternion();
+      const markerPos = new THREE.Vector3();
+      const camWorld = new THREE.Vector3();
       obj.parent.getWorldQuaternion(parentQ);
+      obj.parent.getWorldPosition(markerPos);
+      cam.getWorldPosition(camWorld);
+      if (!fin(parentQ) || !fin(markerPos) || !fin(camWorld)) return;
 
-      const finite = (v) => v.toArray().every(Number.isFinite);
-      if (!finite(camWorld) || !finite(selfWorld) || !finite(parentQ)) return;
+      // ---- 1. smoothed world position -> kills positional tremor ----
+      if (!this._ready) this._pos.copy(markerPos);
+      else this._pos.lerp(markerPos, 1 - Math.exp(-step / 0.13));
+      const localPos = obj.parent.worldToLocal(this._pos.clone());
+      if (fin(localPos)) obj.position.copy(localPos);
 
-      // marker "up" = image target local +Z, expressed in world space
-      const up = new THREE.Vector3(0, 0, 1).applyQuaternion(parentQ).normalize();
-
-      // horizontal direction from the character to the camera
-      const toCam = camWorld.sub(selfWorld);
-      toCam.addScaledVector(up, -toCam.dot(up));
-      if (toCam.lengthSq() < 1e-6) return;
-      toCam.normalize();
-
-      // basis: image normal (+Z) -> toCam, image up (+Y) -> marker up
-      const right = new THREE.Vector3().crossVectors(up, toCam).normalize();
-      const m = new THREE.Matrix4().makeBasis(right, up, toCam);
-      const worldQ = new THREE.Quaternion().setFromRotationMatrix(m);
-      if (!finite(worldQ)) return;
-
-      // desired orientation in local (parent) space
-      this._target.copy(parentQ.invert().multiply(worldQ));
-
-      if (!this._settled) {
-        obj.quaternion.copy(this._target);
-        this._settled = true;
-      } else {
-        // critically-damped-ish smoothing: ~180ms time constant, frame-rate independent
-        const k = 1 - Math.exp(-(dt || 16) / 180);
-        obj.quaternion.slerp(this._target, k);
+      // ---- 2. up direction ----
+      const markerUp = new THREE.Vector3(0, 0, 1).applyQuaternion(parentQ).normalize();
+      let up = markerUp;
+      const g = window.__worldUp;
+      if (g && fin(g) && g.lengthSq() > 0.1) {
+        const gg = g.clone().normalize();
+        // trust the sensor only when it broadly agrees with the marker
+        if (gg.dot(markerUp) > 0.6) up = gg;
       }
+
+      // ---- 3. forward = slow follow of the horizontal dir to the camera ----
+      const toCam = camWorld.clone().sub(this._pos);
+      toCam.addScaledVector(up, -toCam.dot(up));
+      if (toCam.lengthSq() > 0.03) {
+        toCam.normalize();
+        if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
+        else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
+      } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
+        // camera almost overhead at first sight: use the card's printed "up" edge
+        this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
+      }
+      this._fwd.addScaledVector(up, -this._fwd.dot(up));
+      if (this._fwd.lengthSq() < 1e-6) return;
+      this._fwd.normalize();
+
+      // ---- 4. build orientation: image normal(+Z) -> forward, image up(+Y) -> up ----
+      const right = new THREE.Vector3().crossVectors(up, this._fwd).normalize();
+      const upTrue = new THREE.Vector3().crossVectors(this._fwd, right).normalize();
+      const m = new THREE.Matrix4().makeBasis(right, upTrue, this._fwd);
+      const worldQ = new THREE.Quaternion().setFromRotationMatrix(m);
+      if (!fin(worldQ)) return;
+
+      // Smooth in WORLD space, then convert to local with the *current* parent
+      // rotation. This way the marker's own rotation noise cancels exactly
+      // (world orientation === the smoothed target) instead of leaking through
+      // a lagging local slerp.
+      if (!this._ready) {
+        this._worldQ.copy(worldQ);
+        this._ready = true;
+      } else {
+        this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
+      }
+      obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
     },
   });
 </script>
@@ -385,6 +468,8 @@
       alert("ARの読み込みに失敗しました。通信状況の良い場所でページを再読み込みしてください。");
       return;
     }
+    // ask for the motion sensor here, while we still have the user gesture (iOS)
+    if (typeof window.__enableTilt === "function") window.__enableTilt();
     startOverlay.classList.add("hidden");
     hint.classList.remove("hidden");
     Promise.resolve(arSystem.start()).catch(() => {
