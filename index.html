@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>ARありがとうカード</title>
-<script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
   html, body {
@@ -17,6 +17,8 @@
     font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
   }
   a-scene { width: 100%; height: 100%; }
+  /* never show raw asset images, even if A-Frame fails to boot */
+  a-assets, a-assets img { display: none !important; }
 
   /* Simple instruction banner shown before / while scanning */
   #hint {
@@ -300,10 +302,18 @@
   const hint = document.getElementById("hint");
 
   startBtn.addEventListener("click", () => {
+    const arSystem = sceneEl.systems && sceneEl.systems["mindar-image-system"];
+    if (!window.AFRAME || !arSystem) {
+      alert("ARの読み込みに失敗しました。通信状況の良い場所でページを再読み込みしてください。");
+      return;
+    }
     startOverlay.classList.add("hidden");
     hint.classList.remove("hidden");
-    const arSystem = sceneEl.systems["mindar-image-system"];
-    if (arSystem) arSystem.start();
+    Promise.resolve(arSystem.start()).catch(() => {
+      startOverlay.classList.remove("hidden");
+      hint.classList.add("hidden");
+      alert("カメラを起動できませんでした。ブラウザのカメラ許可を確認して、もう一度お試しください。");
+    });
   });
 })();
 </script>
