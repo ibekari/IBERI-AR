@@ -86,6 +86,65 @@
     box-shadow: 0 6px 16px rgba(232,132,58,0.4);
   }
   #start-overlay.hidden { display: none; }
+
+  /* stray A-Frame VR / AR entry buttons */
+  .a-enter-vr, .a-enter-ar, .a-enter-vr-button, .a-enter-ar-button { display: none !important; }
+
+  /* shutter button */
+  #shutter {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+    transform: translateX(-50%);
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    border: 4px solid rgba(255,255,255,0.9);
+    background: rgba(0,0,0,0.35);
+    color: #fff;
+    font-size: 26px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 25;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #shutter:active { transform: translateX(-50%) scale(0.92); }
+  #shutter.hidden { display: none; }
+
+  /* photo preview overlay */
+  #shot {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(20,14,10,0.92);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  #shot.hidden { display: none; }
+  #shot img {
+    max-width: 100%;
+    max-height: 68vh;
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+  }
+  #shot .row { display: flex; gap: 14px; }
+  #shot button {
+    border: none;
+    padding: 13px 28px;
+    font-size: 15px;
+    border-radius: 999px;
+    color: #fff;
+  }
+  #shot .save { background: #e8843a; box-shadow: 0 6px 16px rgba(232,132,58,0.4); }
+  #shot .close { background: rgba(255,255,255,0.18); }
+  #shot .tip { color: rgba(255,255,255,0.7); font-size: 12px; margin: 0; }
 </style>
 </head>
 <body>
@@ -102,10 +161,22 @@
 
   <div id="hint" class="hidden"><span>絵にカメラをゆっくり近づけてください</span></div>
 
+  <button id="shutter" class="hidden" aria-label="写真をとる">📸</button>
+
+  <div id="shot" class="hidden">
+    <img id="shot-img" alt="撮影した写真" />
+    <p class="tip">画像を長押しでも保存できます</p>
+    <div class="row">
+      <button type="button" class="save" id="shot-save">保存</button>
+      <button type="button" class="close" id="shot-close">とじる</button>
+    </div>
+  </div>
+
   <a-scene
     mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; uiScanning: yes; uiLoading: no; filterMinCF: 0.00001; filterBeta: 1000;"
     color-space="sRGB"
     renderer="colorManagement: true, physicallyCorrectLights"
+    shot-grabber
     vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: true"
     embedded
@@ -144,6 +215,25 @@
   </a-scene>
 
 <script>
+  /*
+   * shot-grabber
+   * ------------
+   * Reads the WebGL canvas in `tock` (which A-Frame runs right AFTER the scene
+   * is rendered), so the drawing buffer is still valid without needing
+   * preserveDrawingBuffer. Call `.grab(cb)` and the callback fires next frame
+   * with the freshly-rendered canvas.
+   */
+  AFRAME.registerComponent("shot-grabber", {
+    init: function () { this._cb = null; },
+    grab: function (cb) { this._cb = cb; },
+    tock: function () {
+      const cb = this._cb;
+      if (!cb) return;
+      this._cb = null;
+      cb(this.el.renderer && this.el.renderer.domElement);
+    },
+  });
+
   /*
    * Gravity ("true up") tracking.
    * --------------------------------
@@ -457,7 +547,83 @@
     hideContent();
   });
 
-  // ---------- 4. start button -> start AR session ----------
+  // ---------- 4. screenshot (camera feed + 3D layer composited) ----------
+  const shutter = document.getElementById("shutter");
+  const shotOverlay = document.getElementById("shot");
+  const shotImg = document.getElementById("shot-img");
+  let shotUrl = null;
+
+  function drawCover(ctx, src, dw, dh) {
+    const sw = src.videoWidth || src.width;
+    const sh = src.videoHeight || src.height;
+    if (!sw || !sh) return;
+    const scale = Math.max(dw / sw, dh / sh);
+    const w = sw * scale;
+    const h = sh * scale;
+    ctx.drawImage(src, (dw - w) / 2, (dh - h) / 2, w, h);
+  }
+
+  function compose(glCanvas) {
+    const video = document.querySelector("video");
+    const out = document.createElement("canvas");
+    out.width = (glCanvas && glCanvas.width) || window.innerWidth;
+    out.height = (glCanvas && glCanvas.height) || window.innerHeight;
+    const ctx = out.getContext("2d");
+
+    // camera feed first (cover-fit, exactly how MindAR shows it), then the 3D layer
+    if (video && video.videoWidth) drawCover(ctx, video, out.width, out.height);
+    else { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, out.width, out.height); }
+    if (glCanvas) { try { ctx.drawImage(glCanvas, 0, 0, out.width, out.height); } catch (e) {} }
+
+    out.toBlob((blob) => {
+      if (!blob) { alert("写真の作成に失敗しました。もう一度お試しください。"); return; }
+      if (shotUrl) URL.revokeObjectURL(shotUrl);
+      shotUrl = URL.createObjectURL(blob);
+      shotImg.src = shotUrl;
+      shotOverlay._blob = blob;
+      shotOverlay.classList.remove("hidden");
+    }, "image/png");
+  }
+
+  function takeShot() {
+    const grabber = sceneEl.components && sceneEl.components["shot-grabber"];
+    if (grabber) grabber.grab(compose);
+    else compose(sceneEl.renderer && sceneEl.renderer.domElement);
+  }
+
+  function fileName() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `arigatou-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
+  }
+
+  async function saveShot() {
+    const blob = shotOverlay._blob;
+    if (!blob) return;
+    const file = new File([blob], fileName(), { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "ARありがとうカード" });
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") return;
+      }
+    }
+    const a = document.createElement("a");
+    a.href = shotUrl;
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  shutter.addEventListener("click", takeShot);
+  document.getElementById("shot-save").addEventListener("click", saveShot);
+  document.getElementById("shot-close").addEventListener("click", () => {
+    shotOverlay.classList.add("hidden");
+  });
+
+  // ---------- 5. start button -> start AR session ----------
   const startOverlay = document.getElementById("start-overlay");
   const startBtn = document.getElementById("start-btn");
   const hint = document.getElementById("hint");
@@ -472,11 +638,15 @@
     if (typeof window.__enableTilt === "function") window.__enableTilt();
     startOverlay.classList.add("hidden");
     hint.classList.remove("hidden");
-    Promise.resolve(arSystem.start()).catch(() => {
-      startOverlay.classList.remove("hidden");
-      hint.classList.add("hidden");
-      alert("カメラを起動できませんでした。ブラウザのカメラ許可を確認して、もう一度お試しください。");
-    });
+    let started;
+    try { started = arSystem.start(); } catch (e) { started = Promise.reject(e); }
+    Promise.resolve(started)
+      .then(() => { shutter.classList.remove("hidden"); })
+      .catch(() => {
+        startOverlay.classList.remove("hidden");
+        hint.classList.add("hidden");
+        alert("カメラを起動できませんでした。ブラウザのカメラ許可を確認して、もう一度お試しください。");
+      });
   });
 })();
 </script>
