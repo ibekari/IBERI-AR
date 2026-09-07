@@ -103,7 +103,7 @@
   <div id="hint" class="hidden"><span>絵にカメラをゆっくり近づけてください</span></div>
 
   <a-scene
-    mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; uiScanning: yes; uiLoading: no;"
+    mindar-image="imageTargetSrc: ./assets/targets.mind; autoStart: false; uiScanning: yes; uiLoading: no; filterMinCF: 0.00005; filterBeta: 300;"
     color-space="sRGB"
     renderer="colorManagement: true, physicallyCorrectLights"
     vr-mode-ui="enabled: false"
@@ -155,13 +155,20 @@
    * lying flat on it.
    */
   AFRAME.registerComponent("billboard-upright", {
-    tick: function () {
+    init: function () {
+      this._target = new THREE.Quaternion();
+      this._settled = false;
+    },
+    tick: function (time, dt) {
       const obj = this.el.object3D;
       const cam = this.el.sceneEl && this.el.sceneEl.camera;
       // Only meaningful while the marker is being tracked. Before the first
       // detection MindAR leaves the target matrix uninitialised, which would
       // otherwise feed NaN into the orientation below.
-      if (!cam || !obj.parent || !obj.visible) return;
+      if (!cam || !obj.parent || !obj.visible) {
+        this._settled = false; // snap on the next re-acquire
+        return;
+      }
 
       const camWorld = new THREE.Vector3();
       cam.getWorldPosition(camWorld);
@@ -190,8 +197,17 @@
       const worldQ = new THREE.Quaternion().setFromRotationMatrix(m);
       if (!finite(worldQ)) return;
 
-      // convert the desired world orientation into local (parent) space
-      obj.quaternion.copy(parentQ.invert().multiply(worldQ));
+      // desired orientation in local (parent) space
+      this._target.copy(parentQ.invert().multiply(worldQ));
+
+      if (!this._settled) {
+        obj.quaternion.copy(this._target);
+        this._settled = true;
+      } else {
+        // critically-damped-ish smoothing: ~180ms time constant, frame-rate independent
+        const k = 1 - Math.exp(-(dt || 16) / 180);
+        obj.quaternion.slerp(this._target, k);
+      }
     },
   });
 </script>
