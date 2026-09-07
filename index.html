@@ -46,6 +46,24 @@
   }
   #hint.hidden { opacity: 0; }
 
+  /* transient toast (illustration switched, etc.) */
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.62);
+    color: #fff;
+    padding: 9px 18px;
+    border-radius: 999px;
+    font-size: 13px;
+    z-index: 26;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  #toast.show { opacity: 1; }
+
   #start-overlay {
     position: fixed;
     inset: 0;
@@ -90,12 +108,21 @@
   /* stray A-Frame VR / AR entry buttons */
   .a-enter-vr, .a-enter-ar, .a-enter-vr-button, .a-enter-ar-button { display: none !important; }
 
-  /* shutter button */
-  #shutter {
+  /* bottom control bar: ◀  📸  ▶ */
+  #controls {
     position: fixed;
     left: 50%;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
     transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    z-index: 25;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #controls.hidden { display: none; }
+  #controls button { -webkit-tap-highlight-color: transparent; }
+  #shutter {
     width: 68px;
     height: 68px;
     border-radius: 50%;
@@ -107,11 +134,22 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 25;
-    -webkit-tap-highlight-color: transparent;
   }
-  #shutter:active { transform: translateX(-50%) scale(0.92); }
-  #shutter.hidden { display: none; }
+  #shutter:active { transform: scale(0.92); }
+  .navbtn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.4);
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .navbtn:active { transform: scale(0.9); background: rgba(0,0,0,0.6); }
 
   /* photo preview overlay */
   #shot {
@@ -160,8 +198,13 @@
   </div>
 
   <div id="hint" class="hidden"><span>絵にカメラをゆっくり近づけてください</span></div>
+  <div id="toast"></div>
 
-  <button id="shutter" class="hidden" aria-label="写真をとる">📸</button>
+  <div id="controls" class="hidden">
+    <button type="button" class="navbtn" id="prev-btn" aria-label="前のイラスト">◀</button>
+    <button type="button" id="shutter" aria-label="写真をとる">📸</button>
+    <button type="button" class="navbtn" id="next-btn" aria-label="次のイラスト">▶</button>
+  </div>
 
   <div id="shot" class="hidden">
     <img id="shot-img" alt="撮影した写真" />
@@ -517,24 +560,30 @@
     const cx = s / 2;
 
     const glow = x.createRadialGradient(cx, cx, 0, cx, cx, cx);
-    glow.addColorStop(0.0, "rgba(255,251,240,0.95)");
-    glow.addColorStop(0.22, "rgba(255,241,205,0.40)");
+    glow.addColorStop(0.0, "rgba(255,252,244,1)");
+    glow.addColorStop(0.18, "rgba(255,244,214,0.55)");
     glow.addColorStop(1.0, "rgba(255,240,200,0)");
     x.fillStyle = glow;
     x.fillRect(0, 0, s, s);
 
     x.translate(cx, cx);
-    x.fillStyle = "rgba(255,255,255,0.98)";
-    x.beginPath();
-    const pts = 4, rO = s * 0.46, rI = s * 0.07;
-    for (let i = 0; i < pts * 2; i++) {
-      const r = i % 2 ? rI : rO;
-      const a = (i / (pts * 2)) * Math.PI * 2 - Math.PI / 2;
-      const px = Math.cos(a) * r, py = Math.sin(a) * r;
-      i ? x.lineTo(px, py) : x.moveTo(px, py);
+    // two crossed 4-point stars for a fuller sparkle
+    for (const [rot, scale] of [[0, 1], [Math.PI / 4, 0.62]]) {
+      x.save();
+      x.rotate(rot);
+      x.fillStyle = "rgba(255,255,255,1)";
+      x.beginPath();
+      const pts = 4, rO = s * 0.48 * scale, rI = s * 0.06;
+      for (let i = 0; i < pts * 2; i++) {
+        const r = i % 2 ? rI : rO;
+        const a = (i / (pts * 2)) * Math.PI * 2 - Math.PI / 2;
+        const px = Math.cos(a) * r, py = Math.sin(a) * r;
+        i ? x.lineTo(px, py) : x.moveTo(px, py);
+      }
+      x.closePath();
+      x.fill();
+      x.restore();
     }
-    x.closePath();
-    x.fill();
     return c.toDataURL("image/png");
   }
 
@@ -555,6 +604,11 @@
   const RISE = 0.28; // how far below its resting spot the character starts
   // resting height: half the character height, so the feet sit on the marker plane
   let restY = VARIANTS[0].h / 2;
+
+  // which illustration is selected (via the ◀ ▶ arrows), and whether the
+  // character is on screen right now
+  let currentVariant = 0;
+  let shownNow = false;
 
   function applyBubble(text) {
     const { url, aspect } = buildBubbleTexture(text);
@@ -619,7 +673,7 @@
   // ---------- sparkle burst ----------
   const sparkleRoot = document.querySelector("#sparkles");
   const SPARKLE_TEX = buildSparkleTexture();
-  const N_SPARKLES = 22;
+  const N_SPARKLES = 38;
   const sparkleEls = [];
   for (let i = 0; i < N_SPARKLES; i++) {
     const sp = document.createElement("a-image");
@@ -642,7 +696,7 @@
     const px = (Math.random() * 2 - 1) * 0.52;
     const py = 0.05 + Math.random() * spreadTop;
     const pz = (Math.random() * 2 - 1) * 0.12 + 0.08;
-    const peak = (small ? 0.045 : 0.075) + Math.random() * 0.055;
+    const peak = (small ? 0.05 : 0.09) + Math.random() * 0.06;
     const rise = 0.1 + Math.random() * 0.14;
     const spin = (Math.random() * 2 - 1) * 0.6;
     el.setAttribute("visible", "true");
@@ -668,22 +722,29 @@
   function burstSparkles() {
     stopSparkles();
     const top = restY * 2 + 0.15;
+    // spread the burst across the (slower) reveal
     sparkleEls.forEach((el, i) =>
-      setTimeout(() => playSparkle(el, top, false), i * 20 + Math.random() * 50)
+      setTimeout(() => playSparkle(el, top, false), i * 26 + Math.random() * 70)
     );
-    // a second lighter wave so the twinkle keeps going for a beat
-    sparkleEls.forEach((el, i) => {
-      if (Math.random() < 0.6)
-        setTimeout(() => {
-          if (el.getAttribute("visible") === false) playSparkle(el, top, i % 2 === 0);
-        }, 520 + i * 24 + Math.random() * 120);
-    });
+    // a couple more overlapping waves so it keeps sparkling for a beat
+    for (let wave = 1; wave <= 2; wave++) {
+      sparkleEls.forEach((el, i) => {
+        if (Math.random() < 0.7)
+          setTimeout(() => {
+            if (el.getAttribute("visible") === false)
+              playSparkle(el, top, i % 3 === 0);
+          }, 700 * wave + i * 22 + Math.random() * 160);
+      });
+    }
     // gentle ongoing twinkle while the character is shown
     ambientTimer = setInterval(() => {
-      const el = sparkleEls[Math.floor(Math.random() * sparkleEls.length)];
-      if (el.getAttribute("visible") === false)
-        playSparkle(el, restY * 2, true);
-    }, 450);
+      const n = 1 + Math.floor(Math.random() * 2);
+      for (let k = 0; k < n; k++) {
+        const el = sparkleEls[Math.floor(Math.random() * sparkleEls.length)];
+        if (el.getAttribute("visible") === false)
+          playSparkle(el, restY * 2, Math.random() < 0.45);
+      }
+    }, 300);
   }
 
   let charAnimId = 0;
@@ -695,22 +756,23 @@
 
     patchReveal();
 
-    // character: rise from just below the marker while a soft edge wipes
-    // the image in from the feet upward
+    // character: rise from just below the marker while a soft edge slowly
+    // wipes the image in from the feet upward
     revealU.value = 0;
     animate({
-      duration: 900,
-      easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+      duration: 2200,
+      easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
       onUpdate: (e) => {
         if (myChar !== charAnimId) return;
         revealU.value = e;
         // opacity is a no-op wash when the reveal shader is active, and a
         // graceful fallback fade if for some reason it did not patch
-        charEntity.setAttribute("opacity", Math.min(1, e * 1.3));
+        charEntity.setAttribute("opacity", Math.min(1, e * 1.25));
       },
     });
     animate({
-      duration: 700,
+      duration: 1500,
+      easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
       onUpdate: (e) => {
         if (myChar !== charAnimId) return;
         const y = restY - RISE * (1 - e); // rises up to standing height
@@ -721,18 +783,19 @@
     // sparkles around the character as it appears
     burstSparkles();
 
-    // bubble: pop in shortly after, above the character
+    // bubble: pop in once the character is mostly revealed
     bubbleWrap.setAttribute("visible", "true");
+    bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
     setTimeout(() => {
       animate({
-        duration: 500,
+        duration: 600,
         onUpdate: (e) => {
           if (myBubble !== bubbleAnimId) return;
           const s = Math.max(0.001, e);
           bubbleWrap.setAttribute("scale", `${s} ${s} ${s}`);
         },
       });
-    }, 280);
+    }, 1150);
   }
 
   function hideContent() {
@@ -747,19 +810,41 @@
     sparkleEls.forEach((el) => el.setAttribute("visible", "false"));
   }
 
+  const toastEl = document.getElementById("toast");
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1400);
+  }
+
   targetEl.addEventListener("targetFound", () => {
     document.getElementById("hint").classList.add("hidden");
-    // pick one of the two at random each time the marker is (re)found
-    applyVariant(VARIANTS[Math.random() < 0.5 ? 0 : 1]);
+    shownNow = true;
+    applyVariant(VARIANTS[currentVariant]);
     showContent();
   });
   targetEl.addEventListener("targetLost", () => {
     document.getElementById("hint").classList.remove("hidden");
+    shownNow = false;
     hideContent();
   });
 
+  // ◀ ▶ : switch which illustration appears
+  function switchVariant(dir) {
+    currentVariant =
+      (currentVariant + dir + VARIANTS.length) % VARIANTS.length;
+    applyVariant(VARIANTS[currentVariant]);
+    if (shownNow) showContent();
+    else showToast(`イラスト ${currentVariant + 1} / ${VARIANTS.length}`);
+  }
+  document.getElementById("prev-btn").addEventListener("click", () => switchVariant(-1));
+  document.getElementById("next-btn").addEventListener("click", () => switchVariant(1));
+
   // ---------- 4. screenshot (camera feed + 3D layer composited) ----------
   const shutter = document.getElementById("shutter");
+  const controls = document.getElementById("controls");
   const shotOverlay = document.getElementById("shot");
   const shotImg = document.getElementById("shot-img");
   let shotUrl = null;
@@ -852,7 +937,7 @@
     let started;
     try { started = arSystem.start(); } catch (e) { started = Promise.reject(e); }
     Promise.resolve(started)
-      .then(() => { shutter.classList.remove("hidden"); })
+      .then(() => { controls.classList.remove("hidden"); })
       .catch(() => {
         startOverlay.classList.remove("hidden");
         hint.classList.add("hidden");
