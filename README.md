@@ -10,7 +10,7 @@
 site/
   index.html          ← ARページ本体（このままGitHub Pagesで公開できます）
   assets/
-    target-image.jpg  ← 目印（マーカー）にする元画像
+    target-image.png  ← 目印（マーカー）にする元画像
     character.png     ← 浮かび上がらせるキャラクター（背景を透過済み）
     targets.mind       ← ★マーカー認識用データ（下記手順で作成が必要）
 ```
@@ -22,7 +22,7 @@ site/
 ### 方法A: ブラウザで作る（一番かんたん・コード不要）
 
 1. パソコンかスマホのブラウザで [MindAR Image Target Compiler](https://hiukim.github.io/mind-ar-js-doc/tools/compile/) を開く
-2. 「Choose File」で `site/assets/target-image.jpg` をアップロード
+2. 「Choose File」で `site/assets/target-image.png` をアップロード
 3. 「Start」を押す（少し時間がかかります）
 4. 完了したら「Download」で `targets.mind` をダウンロード
 5. ダウンロードした `targets.mind` を `site/assets/targets.mind` として保存（このリポジトリに追加してGitHubにpush）
@@ -31,7 +31,7 @@ site/
 
 パソコンのClaude Codeでこのプロジェクトフォルダを開いて、次のように頼んでください。
 
-> `site/assets/target-image.jpg` を MindAR の Image Target Compiler (https://hiukim.github.io/mind-ar-js-doc/tools/compile/) で変換して、結果を `site/assets/targets.mind` として保存して
+> `site/assets/target-image.png` を MindAR の Image Target Compiler (https://hiukim.github.io/mind-ar-js-doc/tools/compile/) で変換して、結果を `site/assets/targets.mind` として保存して
 
 パソコンのブラウザ経由なら外部サイトに接続できるので、この作業を代わりに実行できます。
 
@@ -69,7 +69,7 @@ git push -u origin main
 
 1. 発行されたURLをスマホのブラウザで開く（QRコード経由が便利）
 2. 「カメラをはじめる」をタップ → カメラの使用を許可
-3. 目印の絵（`target-image.jpg` を印刷したもの）にカメラをゆっくり近づける
+3. 目印の絵（`target-image.png` を印刷したもの）にカメラをゆっくり近づける
 4. 絵の上にキャラクターが浮かび上がり、「ありがとな〜」の吹き出しが表示される
 
 ## カスタマイズしたい場合
@@ -77,4 +77,4 @@ git push -u origin main
 - 吹き出しの文言: `site/index.html` 内の `buildBubbleTexture("ありがとな〜")` の文字列を変更
 - 吹き出しの色: 同じ関数内の `#fff7ec`（背景色）・`#c2793a`（枠線）・`#a85a25`（文字色）を変更
 - 浮き上がる高さやスピード: `showContent()` 内の `duration`（ミリ秒）や `-0.25 + e * 0.25` の数値を調整
-- マーカー画像やキャラクター画像を差し替える場合は、`site/assets/target-image.jpg` と `character.png` を入れ替えたうえで、targets.mind を作り直してください（画像を変えたら再生成が必須です）
+- マーカー画像やキャラクター画像を差し替える場合は、`site/assets/target-image.png` と `character.png` を入れ替えたうえで、targets.mind を作り直してください（画像を変えたら再生成が必須です）
