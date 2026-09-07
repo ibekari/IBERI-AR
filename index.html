@@ -117,27 +117,84 @@
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
 
     <a-entity id="target" mindar-image-target="targetIndex: 0">
-      <a-entity id="floatGroup" position="0 0 0">
-        <!-- floating character, aspect ratio matches the source image (2545 x 2270) -->
+      <!-- floatGroup is kept upright and turned to face the camera by the
+           "billboard-upright" component, so with the marker lying flat on the
+           ground the character appears to stand vertically on it. -->
+      <a-entity id="floatGroup" position="0 0 0" billboard-upright>
+        <!-- standing character, aspect ratio matches the source image (2545 x 2270).
+             pivot is the image centre, so REST_Y in the script lifts the feet to the marker. -->
         <a-image
           id="charEntity"
           src="#charImg"
           width="1"
           height="0.892"
-          position="0 0 0"
+          position="0 0.18 0"
           opacity="0"
           transparent="true"
-          material="alphaTest: 0.05"
+          material="alphaTest: 0.05; side: double"
         ></a-image>
 
         <!-- speech bubble, generated on the fly from canvas -->
-        <a-entity id="bubble" position="0.15 0.75 0.05" scale="0.001 0.001 0.001" visible="false">
-          <a-image id="bubbleImg" width="0.9" height="0.42" transparent="true" material="alphaTest: 0.05"></a-image>
+        <a-entity id="bubble" position="0.12 1.2 0.02" scale="0.001 0.001 0.001" visible="false">
+          <a-image id="bubbleImg" width="0.9" height="0.42" transparent="true" material="alphaTest: 0.05; side: double"></a-image>
         </a-entity>
       </a-entity>
     </a-entity>
   </a-scene>
 
+<script>
+  /*
+   * billboard-upright
+   * -----------------
+   * Keeps an entity standing along the marker's own "up" axis (the image
+   * target's +Z, which points straight out of the printed marker) and yaws it
+   * around that axis so its front always faces the camera.
+   *
+   * With the marker laid flat on the ground, +Z points at the sky, so the
+   * character looks like it is standing vertically on the marker instead of
+   * lying flat on it.
+   */
+  AFRAME.registerComponent("billboard-upright", {
+    tick: function () {
+      const obj = this.el.object3D;
+      const cam = this.el.sceneEl && this.el.sceneEl.camera;
+      // Only meaningful while the marker is being tracked. Before the first
+      // detection MindAR leaves the target matrix uninitialised, which would
+      // otherwise feed NaN into the orientation below.
+      if (!cam || !obj.parent || !obj.visible) return;
+
+      const camWorld = new THREE.Vector3();
+      cam.getWorldPosition(camWorld);
+
+      const selfWorld = new THREE.Vector3();
+      obj.getWorldPosition(selfWorld);
+
+      const parentQ = new THREE.Quaternion();
+      obj.parent.getWorldQuaternion(parentQ);
+
+      const finite = (v) => v.toArray().every(Number.isFinite);
+      if (!finite(camWorld) || !finite(selfWorld) || !finite(parentQ)) return;
+
+      // marker "up" = image target local +Z, expressed in world space
+      const up = new THREE.Vector3(0, 0, 1).applyQuaternion(parentQ).normalize();
+
+      // horizontal direction from the character to the camera
+      const toCam = camWorld.sub(selfWorld);
+      toCam.addScaledVector(up, -toCam.dot(up));
+      if (toCam.lengthSq() < 1e-6) return;
+      toCam.normalize();
+
+      // basis: image normal (+Z) -> toCam, image up (+Y) -> marker up
+      const right = new THREE.Vector3().crossVectors(up, toCam).normalize();
+      const m = new THREE.Matrix4().makeBasis(right, up, toCam);
+      const worldQ = new THREE.Quaternion().setFromRotationMatrix(m);
+      if (!finite(worldQ)) return;
+
+      // convert the desired world orientation into local (parent) space
+      obj.quaternion.copy(parentQ.invert().multiply(worldQ));
+    },
+  });
+</script>
 <script>
 (function () {
   "use strict";
@@ -250,20 +307,22 @@
   let charAnimId = 0;
   let bubbleAnimId = 0;
 
+  // resting height: half the character height, so the feet sit on the marker plane
+  const REST_Y = 0.446;
+  const RISE = 0.28; // how far below the resting spot it starts
+
   function showContent() {
     const myChar = ++charAnimId;
     const myBubble = ++bubbleAnimId;
 
-    // character: float up from slightly below + fade/scale in
+    // character: float up from slightly below the marker + fade in
     animate({
       duration: 700,
       onUpdate: (e) => {
         if (myChar !== charAnimId) return;
-        const y = -0.25 + e * 0.25; // rises into place
+        const y = REST_Y - RISE * (1 - e); // rises up to standing height
         charEntity.setAttribute("position", `0 ${y} 0`);
         charEntity.setAttribute("opacity", Math.min(1, e * 1.2));
-        const s = 0.6 + 0.4 * e;
-        charEntity.setAttribute("scale", `${s} ${s} ${s}`);
       },
     });
 
@@ -285,8 +344,7 @@
     charAnimId++;
     bubbleAnimId++;
     charEntity.setAttribute("opacity", 0);
-    charEntity.setAttribute("position", "0 -0.25 0");
-    charEntity.setAttribute("scale", "0.6 0.6 0.6");
+    charEntity.setAttribute("position", `0 ${REST_Y - RISE} 0`);
     bubbleWrap.setAttribute("visible", "false");
     bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
   }
