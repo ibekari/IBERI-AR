@@ -227,6 +227,9 @@
     <a-assets>
       <img id="charImg" src="./assets/character.png" crossorigin="anonymous" />
       <img id="charImg2" src="./assets/character2.png" crossorigin="anonymous" />
+      <img id="charImg3" src="./assets/character3.jpg" crossorigin="anonymous" />
+      <img id="charImg4" src="./assets/character4.jpg" crossorigin="anonymous" />
+      <img id="charImg5" src="./assets/character5.jpg" crossorigin="anonymous" />
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
@@ -594,11 +597,15 @@
   const bubbleWrap = document.querySelector("#bubble");
   const bubbleImg = document.querySelector("#bubbleImg");
 
-  // The two things that can pop up. `h` = source image height / width, used to
-  // stand the character with its feet on the marker.
+  // What can pop up above the marker. `w` / `h` are the plane size in metres
+  // (h/w matches the source image so the feet/bottom sit on the marker).
+  // `plain: true` -> just the picture, no speech bubble and no sparkles.
   const VARIANTS = [
-    { img: "#charImg", h: 0.892, text: "ありがとな〜" },
-    { img: "#charImg2", h: 0.907, text: "イベリアラカルト\n楽しんでや〜" },
+    { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜" },
+    { img: "#charImg2", w: 1, h: 0.907, text: "イベリアラカルト\n楽しんでや〜" },
+    { img: "#charImg3", w: 0.8, h: 0.8 * 1.4, plain: true },
+    { img: "#charImg4", w: 0.8, h: 0.8 * 1.4, plain: true },
+    { img: "#charImg5", w: 0.8, h: 0.8 * 1.4, plain: true },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const RISE = 0.28; // how far below its resting spot the character starts
@@ -622,10 +629,15 @@
 
   function applyVariant(v) {
     restY = v.h / 2;
-    charEntity.setAttribute("width", 1);
+    charEntity.setAttribute("width", v.w || 1);
     charEntity.setAttribute("height", v.h);
     charEntity.setAttribute("src", v.img);
-    applyBubble(v.text);
+    if (v.plain) {
+      bubbleWrap.setAttribute("visible", "false");
+      bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
+    } else {
+      applyBubble(v.text);
+    }
   }
 
   function setBubbleTexture() {
@@ -673,7 +685,7 @@
   // ---------- sparkle burst ----------
   const sparkleRoot = document.querySelector("#sparkles");
   const SPARKLE_TEX = buildSparkleTexture();
-  const N_SPARKLES = 38;
+  const N_SPARKLES = 22;
   const sparkleEls = [];
   for (let i = 0; i < N_SPARKLES; i++) {
     const sp = document.createElement("a-image");
@@ -726,25 +738,20 @@
     sparkleEls.forEach((el, i) =>
       setTimeout(() => playSparkle(el, top, false), i * 26 + Math.random() * 70)
     );
-    // a couple more overlapping waves so it keeps sparkling for a beat
-    for (let wave = 1; wave <= 2; wave++) {
-      sparkleEls.forEach((el, i) => {
-        if (Math.random() < 0.7)
-          setTimeout(() => {
-            if (el.getAttribute("visible") === false)
-              playSparkle(el, top, i % 3 === 0);
-          }, 700 * wave + i * 22 + Math.random() * 160);
-      });
-    }
+    // one more overlapping wave so it keeps sparkling for a beat
+    sparkleEls.forEach((el, i) => {
+      if (Math.random() < 0.5)
+        setTimeout(() => {
+          if (el.getAttribute("visible") === false)
+            playSparkle(el, top, i % 2 === 0);
+        }, 800 + i * 24 + Math.random() * 180);
+    });
     // gentle ongoing twinkle while the character is shown
     ambientTimer = setInterval(() => {
-      const n = 1 + Math.floor(Math.random() * 2);
-      for (let k = 0; k < n; k++) {
-        const el = sparkleEls[Math.floor(Math.random() * sparkleEls.length)];
-        if (el.getAttribute("visible") === false)
-          playSparkle(el, restY * 2, Math.random() < 0.45);
-      }
-    }, 300);
+      const el = sparkleEls[Math.floor(Math.random() * sparkleEls.length)];
+      if (el.getAttribute("visible") === false)
+        playSparkle(el, restY * 2, Math.random() < 0.5);
+    }, 420);
   }
 
   let charAnimId = 0;
@@ -753,6 +760,7 @@
   function showContent() {
     const myChar = ++charAnimId;
     const myBubble = ++bubbleAnimId;
+    const plain = !!VARIANTS[currentVariant].plain;
 
     patchReveal();
 
@@ -779,6 +787,12 @@
         charEntity.setAttribute("position", `0 ${y} 0`);
       },
     });
+
+    if (plain) {
+      // illustrations 3-5: just the picture, no bubble, no sparkles
+      bubbleWrap.setAttribute("visible", "false");
+      return;
+    }
 
     // sparkles around the character as it appears
     burstSparkles();
