@@ -13,10 +13,14 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #000;
+    /* MindAR inserts the camera <video> at z-index:-2 (behind <body>),
+       so <body> must stay transparent or it hides the live camera feed. */
+    background: transparent;
     font-family: "Hiragino Maru Gothic ProN", "Hiragino Sans", "Yu Gothic", sans-serif;
   }
   a-scene { width: 100%; height: 100%; }
+  /* keep the A-Frame canvas see-through so the camera feed shows behind the 3D layer */
+  a-scene .a-canvas { background: transparent !important; }
   /* never show raw asset images, even if A-Frame fails to boot */
   a-assets, a-assets img { display: none !important; }
 
