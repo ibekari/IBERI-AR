@@ -208,6 +208,9 @@
           material="alphaTest: 0.05; side: double"
         ></a-image>
 
+        <!-- sparkle burst layer (sprites created by the script) -->
+        <a-entity id="sparkles"></a-entity>
+
         <!-- speech bubble, generated on the fly from canvas -->
         <a-entity id="bubble" position="0.12 1.2 0.02" scale="0.001 0.001 0.001" visible="false">
           <a-image id="bubbleImg" width="0.9" height="0.42" transparent="true" material="alphaTest: 0.05; side: double"></a-image>
@@ -503,6 +506,37 @@
     }
     requestAnimationFrame(step);
   }
+  const linear = (t) => t;
+
+  // ---------- 2b. sparkle sprite texture (a soft 4-point star) ----------
+  function buildSparkleTexture() {
+    const s = 128;
+    const c = document.createElement("canvas");
+    c.width = c.height = s;
+    const x = c.getContext("2d");
+    const cx = s / 2;
+
+    const glow = x.createRadialGradient(cx, cx, 0, cx, cx, cx);
+    glow.addColorStop(0.0, "rgba(255,251,240,0.95)");
+    glow.addColorStop(0.22, "rgba(255,241,205,0.40)");
+    glow.addColorStop(1.0, "rgba(255,240,200,0)");
+    x.fillStyle = glow;
+    x.fillRect(0, 0, s, s);
+
+    x.translate(cx, cx);
+    x.fillStyle = "rgba(255,255,255,0.98)";
+    x.beginPath();
+    const pts = 4, rO = s * 0.46, rI = s * 0.07;
+    for (let i = 0; i < pts * 2; i++) {
+      const r = i % 2 ? rI : rO;
+      const a = (i / (pts * 2)) * Math.PI * 2 - Math.PI / 2;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      i ? x.lineTo(px, py) : x.moveTo(px, py);
+    }
+    x.closePath();
+    x.fill();
+    return c.toDataURL("image/png");
+  }
 
   // ---------- 3. wire everything up once the scene is ready ----------
   const sceneEl = document.querySelector("a-scene");
@@ -546,6 +580,112 @@
   if (sceneEl.hasLoaded) setBubbleTexture();
   else sceneEl.addEventListener("loaded", setBubbleTexture);
 
+  // ---------- bottom-to-top reveal ----------
+  // Shared uniform: 0 = hidden, 1 = fully shown. Injected into the character's
+  // standard material so three still handles colour space / tone mapping.
+  const revealU = { value: 0 };
+  function patchReveal() {
+    const mesh = charEntity.getObject3D("mesh");
+    if (!mesh || !mesh.material || mesh.material.userData.revealed) return;
+    const mat = mesh.material;
+    mat.userData.revealed = true;
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uReveal = revealU;
+      shader.vertexShader =
+        "varying vec2 vRevUv;\n" +
+        shader.vertexShader.replace(
+          "#include <uv_vertex>",
+          "#include <uv_vertex>\n  vRevUv = uv;"
+        );
+      shader.fragmentShader =
+        "varying vec2 vRevUv;\nuniform float uReveal;\n" +
+        shader.fragmentShader.replace(
+          "#include <dithering_fragment>",
+          "#include <dithering_fragment>\n" +
+            "  float _f = 0.34;\n" +
+            "  float _edge = uReveal * (1.0 + _f);\n" +
+            "  float _wipe = smoothstep(_edge, _edge - _f, vRevUv.y);\n" +
+            "  float _fade = smoothstep(0.0, 0.30, uReveal);\n" +
+            "  gl_FragColor.a *= _wipe * _fade;"
+        );
+    };
+    mat.needsUpdate = true;
+  }
+  charEntity.addEventListener("materialtextureloaded", patchReveal);
+  charEntity.addEventListener("loaded", patchReveal);
+  if (sceneEl.hasLoaded) patchReveal();
+  else sceneEl.addEventListener("loaded", patchReveal);
+
+  // ---------- sparkle burst ----------
+  const sparkleRoot = document.querySelector("#sparkles");
+  const SPARKLE_TEX = buildSparkleTexture();
+  const N_SPARKLES = 22;
+  const sparkleEls = [];
+  for (let i = 0; i < N_SPARKLES; i++) {
+    const sp = document.createElement("a-image");
+    sp.setAttribute("src", SPARKLE_TEX);
+    sp.setAttribute("width", 1);
+    sp.setAttribute("height", 1);
+    sp.setAttribute(
+      "material",
+      "shader: flat; transparent: true; blending: additive; depthTest: false; depthWrite: false; opacity: 0"
+    );
+    sp.setAttribute("visible", "false");
+    sparkleRoot.appendChild(sp);
+    sparkleEls.push(sp);
+  }
+
+  function playSparkle(el, spreadTop, small) {
+    const mesh = el.getObject3D("mesh");
+    if (!mesh) return;
+    const o = el.object3D;
+    const px = (Math.random() * 2 - 1) * 0.52;
+    const py = 0.05 + Math.random() * spreadTop;
+    const pz = (Math.random() * 2 - 1) * 0.12 + 0.08;
+    const peak = (small ? 0.045 : 0.075) + Math.random() * 0.055;
+    const rise = 0.1 + Math.random() * 0.14;
+    const spin = (Math.random() * 2 - 1) * 0.6;
+    el.setAttribute("visible", "true");
+    animate({
+      duration: 480 + Math.random() * 320,
+      easing: linear,
+      onUpdate: (t) => {
+        const bell = Math.sin(Math.min(1, t) * Math.PI); // 0 -> 1 -> 0
+        const s = Math.max(0.0001, bell * peak);
+        o.scale.set(s, s, s);
+        o.position.set(px, py + rise * t, pz);
+        o.rotation.z = spin * t;
+        if (mesh.material) mesh.material.opacity = bell * (small ? 0.7 : 1);
+      },
+      onDone: () => el.setAttribute("visible", "false"),
+    });
+  }
+
+  let ambientTimer = null;
+  function stopSparkles() {
+    if (ambientTimer) { clearInterval(ambientTimer); ambientTimer = null; }
+  }
+  function burstSparkles() {
+    stopSparkles();
+    const top = restY * 2 + 0.15;
+    sparkleEls.forEach((el, i) =>
+      setTimeout(() => playSparkle(el, top, false), i * 20 + Math.random() * 50)
+    );
+    // a second lighter wave so the twinkle keeps going for a beat
+    sparkleEls.forEach((el, i) => {
+      if (Math.random() < 0.6)
+        setTimeout(() => {
+          if (el.getAttribute("visible") === false) playSparkle(el, top, i % 2 === 0);
+        }, 520 + i * 24 + Math.random() * 120);
+    });
+    // gentle ongoing twinkle while the character is shown
+    ambientTimer = setInterval(() => {
+      const el = sparkleEls[Math.floor(Math.random() * sparkleEls.length)];
+      if (el.getAttribute("visible") === false)
+        playSparkle(el, restY * 2, true);
+    }, 450);
+  }
+
   let charAnimId = 0;
   let bubbleAnimId = 0;
 
@@ -553,16 +693,33 @@
     const myChar = ++charAnimId;
     const myBubble = ++bubbleAnimId;
 
-    // character: float up from slightly below the marker + fade in
+    patchReveal();
+
+    // character: rise from just below the marker while a soft edge wipes
+    // the image in from the feet upward
+    revealU.value = 0;
+    animate({
+      duration: 900,
+      easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+      onUpdate: (e) => {
+        if (myChar !== charAnimId) return;
+        revealU.value = e;
+        // opacity is a no-op wash when the reveal shader is active, and a
+        // graceful fallback fade if for some reason it did not patch
+        charEntity.setAttribute("opacity", Math.min(1, e * 1.3));
+      },
+    });
     animate({
       duration: 700,
       onUpdate: (e) => {
         if (myChar !== charAnimId) return;
         const y = restY - RISE * (1 - e); // rises up to standing height
         charEntity.setAttribute("position", `0 ${y} 0`);
-        charEntity.setAttribute("opacity", Math.min(1, e * 1.2));
       },
     });
+
+    // sparkles around the character as it appears
+    burstSparkles();
 
     // bubble: pop in shortly after, above the character
     bubbleWrap.setAttribute("visible", "true");
@@ -581,10 +738,13 @@
   function hideContent() {
     charAnimId++;
     bubbleAnimId++;
+    revealU.value = 0;
     charEntity.setAttribute("opacity", 0);
     charEntity.setAttribute("position", `0 ${restY - RISE} 0`);
     bubbleWrap.setAttribute("visible", "false");
     bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
+    stopSparkles();
+    sparkleEls.forEach((el) => el.setAttribute("visible", "false"));
   }
 
   targetEl.addEventListener("targetFound", () => {
