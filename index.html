@@ -137,6 +137,7 @@
   #controls.hidden { display: none; }
   #controls button { -webkit-tap-highlight-color: transparent; }
   #shutter {
+    position: relative;
     width: 68px;
     height: 68px;
     border-radius: 50%;
@@ -151,6 +152,7 @@
   }
   #shutter:active { transform: scale(0.92); }
   .navbtn {
+    position: relative;
     width: 52px;
     height: 52px;
     border-radius: 50%;
@@ -164,6 +166,58 @@
     justify-content: center;
   }
   .navbtn:active { transform: scale(0.9); background: rgba(0,0,0,0.6); }
+
+  /* first-illustration-only button captions ("001") */
+  .btn-hint {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(0,0,0,0.76);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.35;
+    padding: 6px 10px;
+    border-radius: 10px;
+    white-space: nowrap;
+    opacity: 0;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    transition: opacity 0.3s ease;
+  }
+  .btn-hint.show { opacity: 1; }
+  .btn-hint.above {
+    left: 50%;
+    bottom: calc(100% + 11px);
+    transform: translateX(-50%);
+  }
+  .btn-hint.above::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(0,0,0,0.76);
+  }
+  .btn-hint.beside {
+    box-sizing: border-box;
+    left: calc(100% + 6px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: normal;
+    width: 58px;
+    font-size: 10.5px;
+    padding: 5px;
+    text-align: left;
+  }
+  .btn-hint.beside::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    transform: translateY(-50%);
+    border: 5px solid transparent;
+    border-right-color: rgba(0,0,0,0.76);
+  }
 
   /* photo preview overlay */
   #shot {
@@ -221,8 +275,14 @@
 
   <div id="controls" class="hidden">
     <button type="button" class="navbtn" id="prev-btn" aria-label="前のイラスト">◀</button>
-    <button type="button" id="shutter" aria-label="写真をとる">📸</button>
-    <button type="button" class="navbtn" id="next-btn" aria-label="次のイラスト">▶</button>
+    <button type="button" id="shutter" aria-label="写真をとる">
+      📸
+      <span class="btn-hint above" id="shutter-hint">スクリーンショットが撮れます</span>
+    </button>
+    <button type="button" class="navbtn" id="next-btn" aria-label="次のイラスト">
+      ▶
+      <span class="btn-hint beside" id="next-hint">次の作品へ移動</span>
+    </button>
   </div>
 
   <div id="shot" class="hidden">
@@ -950,16 +1010,29 @@
     toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1400);
   }
 
+  // button captions ("📸 でスクショが撮れる" / "▶ で次の作品へ") -- shown only
+  // while illustration 001 (the first / default one) is on screen, so
+  // first-time visitors get the hint without it cluttering every variant.
+  const shutterHint = document.getElementById("shutter-hint");
+  const nextHint = document.getElementById("next-hint");
+  function updateButtonHints() {
+    const show = shownNow && currentVariant === 0;
+    shutterHint.classList.toggle("show", show);
+    nextHint.classList.toggle("show", show);
+  }
+
   targetEl.addEventListener("targetFound", () => {
     document.getElementById("hint").classList.add("hidden");
     shownNow = true;
     applyVariant(VARIANTS[currentVariant]);
     showContent();
+    updateButtonHints();
   });
   targetEl.addEventListener("targetLost", () => {
     document.getElementById("hint").classList.remove("hidden");
     shownNow = false;
     hideContent();
+    updateButtonHints();
   });
 
   // ◀ ▶ : switch which illustration appears
@@ -969,6 +1042,7 @@
     applyVariant(VARIANTS[currentVariant]);
     if (shownNow) showContent();
     else showToast(`イラスト ${currentVariant + 1} / ${VARIANTS.length}`);
+    updateButtonHints();
   }
   document.getElementById("prev-btn").addEventListener("click", () => switchVariant(-1));
   document.getElementById("next-btn").addEventListener("click", () => switchVariant(1));
