@@ -10,7 +10,8 @@
 index.html            ← ARページ本体（リポジトリ直下。このままGitHub Pagesで公開できます）
 assets/
   target-image.png    ← 目印（マーカー）にする元画像
-  character.png       ← 浮かび上がらせるキャラクター（背景を透過済み）
+  001.png / 002.png / 003.jpg
+                       ← 浮かび上がらせるイラスト（◀▶ ボタンで切り替え）
   targets.mind        ← ★マーカー認識用データ（下記手順で作成が必要）
 ```
 
@@ -58,7 +59,10 @@ git push -u origin main
 
 ## カスタマイズしたい場合
 
-- 吹き出しの文言: `index.html` 内の `buildBubbleTexture("ありがとな〜")` の文字列を変更
-- 吹き出しの色: 同じ関数内の `#fff7ec`（背景色）・`#c2793a`（枠線）・`#a85a25`（文字色）を変更
-- 浮き上がる高さやスピード: `showContent()` 内の `duration`（ミリ秒）や `-0.25 + e * 0.25` の数値を調整
-- マーカー画像やキャラクター画像を差し替える場合は、`assets/target-image.png` と `assets/character.png` を入れ替えたうえで、targets.mind を作り直してください（画像を変えたら再生成が必須です）
+- イラストや吹き出しの文言: `index.html` 内の `VARIANTS` 配列を編集
+  - `text`: 吹き出しの文言（`\n` で改行）。省略すると吹き出しは出ません
+  - `caption`: 吹き出しの代わりにイラスト下部へ出す控えめな一言（例: 003番）
+  - `plain: true`: キラキラの演出を出さない
+- 吹き出しの色: `buildBubbleTexture()` 内の `#fff7ec`（背景色）・`#c2793a`（枠線）・`#a85a25`（文字色）を変更
+- 浮き上がる高さやスピード: `showContent()` 内の `duration`（ミリ秒）を調整
+- マーカー画像を差し替える場合は `assets/target-image.png` を入れ替えたうえで targets.mind を作り直してください（画像を変えたら再生成が必須です）。イラストは `assets/001.png` などを差し替えるだけで、`targets.mind` の作り直しは不要です

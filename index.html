@@ -225,11 +225,9 @@
     embedded
   >
     <a-assets>
-      <img id="charImg" src="./assets/character.png" crossorigin="anonymous" />
-      <img id="charImg2" src="./assets/character2.png" crossorigin="anonymous" />
-      <img id="charImg3" src="./assets/character3.jpg" crossorigin="anonymous" />
-      <img id="charImg4" src="./assets/character4.jpg" crossorigin="anonymous" />
-      <img id="charImg5" src="./assets/character5.jpg" crossorigin="anonymous" />
+      <img id="charImg" src="./assets/001.png" crossorigin="anonymous" />
+      <img id="charImg2" src="./assets/002.png" crossorigin="anonymous" />
+      <img id="charImg3" src="./assets/003.jpg" crossorigin="anonymous" />
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
@@ -240,8 +238,8 @@
            camera by the "stand-on-ground" component, and its position is
            low-pass filtered to damp tracking tremor. -->
       <a-entity id="floatGroup" position="0 0 0" stand-on-ground>
-        <!-- standing character. src / height / bubble text are chosen at random
-             from VARIANTS each time the marker is found (see the script).
+        <!-- standing character. src / height / bubble (or caption) come from
+             VARIANTS[currentVariant], picked with the ◀ ▶ buttons (see the script).
              pivot is the image centre, so restY in the script lifts the feet to the marker. -->
         <a-image
           id="charEntity"
@@ -260,6 +258,11 @@
         <!-- speech bubble, generated on the fly from canvas -->
         <a-entity id="bubble" position="0.12 1.2 0.02" scale="0.001 0.001 0.001" visible="false">
           <a-image id="bubbleImg" width="0.9" height="0.42" transparent="true" material="alphaTest: 0.05; side: double"></a-image>
+        </a-entity>
+
+        <!-- plain caption strip near the bottom of a "plain" illustration (no speech bubble) -->
+        <a-entity id="caption" position="0 0.09 0.02" scale="0.001 0.001 0.001" visible="false">
+          <a-image id="captionImg" width="0.7" height="0.12" transparent="true" material="alphaTest: 0.05; side: double"></a-image>
         </a-entity>
       </a-entity>
     </a-entity>
@@ -535,6 +538,61 @@
     return { url: canvas.toDataURL("image/png"), aspect: W / H };
   }
 
+  // ---------- 1b. build the plain-caption pill texture on a canvas ----------
+  // Same auto-shrink-to-fit idea as the speech bubble, but a plain rounded
+  // pill (no tail) meant to sit near the bottom of a "no speech bubble"
+  // illustration.
+  function buildCaptionTexture(text) {
+    const S = 4;
+    const lines = String(text).split("\n");
+    const W = 640 * S; // fixed pixel width behind the fixed CAPTION_W metres
+    const padX = 30 * S;
+    const padY = 16 * S;
+    const maxTextW = W - padX * 2;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = W;
+    canvas.height = 10;
+    let ctx = canvas.getContext("2d");
+
+    let font = 34 * S;
+    ctx.font = `bold ${font}px ${BUBBLE_FONT}`;
+    let widest = 1;
+    for (const l of lines) widest = Math.max(widest, ctx.measureText(l).width);
+    if (widest > maxTextW) font = Math.max(16 * S, font * (maxTextW / widest));
+
+    const lineH = font * 1.3;
+    const textBlockH = lineH * lines.length;
+    const H = textBlockH + padY * 2;
+
+    canvas.height = H;
+    ctx = canvas.getContext("2d");
+
+    function roundRectPath(x, y, ww, hh, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + ww, y, x + ww, y + hh, r);
+      ctx.arcTo(x + ww, y + hh, x, y + hh, r);
+      ctx.arcTo(x, y + hh, x, y, r);
+      ctx.arcTo(x, y, x + ww, y, r);
+      ctx.closePath();
+    }
+
+    roundRectPath(0, 0, W, H, H / 2);
+    ctx.fillStyle = "rgba(20, 14, 10, 0.6)";
+    ctx.fill();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${font}px ${BUBBLE_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const cx = W / 2;
+    const firstY = padY + lineH / 2;
+    lines.forEach((ln, i) => ctx.fillText(ln, cx, firstY + i * lineH));
+
+    return { url: canvas.toDataURL("image/png"), aspect: W / H };
+  }
+
   // ---------- 2. animation helper (ease-out-back "pop") ----------
   function easeOutBack(t) {
     const c1 = 1.70158, c3 = c1 + 1;
@@ -596,18 +654,28 @@
   const charEntity = document.querySelector("#charEntity");
   const bubbleWrap = document.querySelector("#bubble");
   const bubbleImg = document.querySelector("#bubbleImg");
+  const captionWrap = document.querySelector("#caption");
+  const captionImg = document.querySelector("#captionImg");
 
   // What can pop up above the marker. `w` / `h` are the plane size in metres
   // (h/w matches the source image so the feet/bottom sit on the marker).
-  // `plain: true` -> just the picture, no speech bubble and no sparkles.
+  // `text`    -> speech bubble above the character with this (line-breakable) text.
+  // `caption` -> no speech bubble; instead a small plain caption strip near
+  //              the bottom of the illustration.
+  // `plain: true` -> no sparkle burst (used together with `caption`).
   const VARIANTS = [
     { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜" },
-    { img: "#charImg2", w: 1, h: 0.907, text: "イベリアラカルト\n楽しんでや〜" },
-    { img: "#charImg3", w: 0.8, h: 0.8 * 1.4, plain: true },
-    { img: "#charImg4", w: 0.8, h: 0.8 * 1.4, plain: true },
-    { img: "#charImg5", w: 0.8, h: 0.8 * 1.4, plain: true },
+    { img: "#charImg2", w: 1, h: 0.907, text: "好きな台詞を入れられるで！" },
+    {
+      img: "#charImg3",
+      w: 0.8,
+      h: 0.8 * (2048 / 1460),
+      plain: true,
+      caption: "※吹き出しを表示しないこともできます",
+    },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
+  const CAPTION_W = 0.9; // world width of the plain-caption pill
   const RISE = 0.28; // how far below its resting spot the character starts
   // resting height: half the character height, so the feet sit on the marker plane
   let restY = VARIANTS[0].h / 2;
@@ -627,16 +695,30 @@
     bubbleWrap.setAttribute("position", `0.12 ${(0.99 + h / 2).toFixed(3)} 0.02`);
   }
 
+  function applyCaption(text) {
+    const { url, aspect } = buildCaptionTexture(text);
+    const h = CAPTION_W / aspect;
+    captionImg.setAttribute("width", CAPTION_W);
+    captionImg.setAttribute("height", h);
+    captionImg.setAttribute("src", url);
+  }
+
   function applyVariant(v) {
     restY = v.h / 2;
     charEntity.setAttribute("width", v.w || 1);
     charEntity.setAttribute("height", v.h);
     charEntity.setAttribute("src", v.img);
-    if (v.plain) {
+
+    if (v.text) applyBubble(v.text);
+    else {
       bubbleWrap.setAttribute("visible", "false");
       bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
-    } else {
-      applyBubble(v.text);
+    }
+
+    if (v.caption) applyCaption(v.caption);
+    else {
+      captionWrap.setAttribute("visible", "false");
+      captionWrap.setAttribute("scale", "0.001 0.001 0.001");
     }
   }
 
@@ -756,11 +838,13 @@
 
   let charAnimId = 0;
   let bubbleAnimId = 0;
+  let captionAnimId = 0;
 
   function showContent() {
     const myChar = ++charAnimId;
     const myBubble = ++bubbleAnimId;
-    const plain = !!VARIANTS[currentVariant].plain;
+    const myCaption = ++captionAnimId;
+    const v = VARIANTS[currentVariant];
 
     patchReveal();
 
@@ -788,38 +872,57 @@
       },
     });
 
-    if (plain) {
-      // illustrations 3-5: just the picture, no bubble, no sparkles
-      bubbleWrap.setAttribute("visible", "false");
-      return;
-    }
-
-    // sparkles around the character as it appears
-    burstSparkles();
+    // sparkles around the character as it appears (skipped for `plain` variants)
+    if (!v.plain) burstSparkles();
 
     // bubble: pop in once the character is mostly revealed
-    bubbleWrap.setAttribute("visible", "true");
-    bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
-    setTimeout(() => {
-      animate({
-        duration: 600,
-        onUpdate: (e) => {
-          if (myBubble !== bubbleAnimId) return;
-          const s = Math.max(0.001, e);
-          bubbleWrap.setAttribute("scale", `${s} ${s} ${s}`);
-        },
-      });
-    }, 1150);
+    if (v.text) {
+      bubbleWrap.setAttribute("visible", "true");
+      bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
+      setTimeout(() => {
+        animate({
+          duration: 600,
+          onUpdate: (e) => {
+            if (myBubble !== bubbleAnimId) return;
+            const s = Math.max(0.001, e);
+            bubbleWrap.setAttribute("scale", `${s} ${s} ${s}`);
+          },
+        });
+      }, 1150);
+    } else {
+      bubbleWrap.setAttribute("visible", "false");
+    }
+
+    // plain caption: pop in near the bottom of the illustration
+    if (v.caption) {
+      captionWrap.setAttribute("visible", "true");
+      captionWrap.setAttribute("scale", "0.001 0.001 0.001");
+      setTimeout(() => {
+        animate({
+          duration: 500,
+          onUpdate: (e) => {
+            if (myCaption !== captionAnimId) return;
+            const s = Math.max(0.001, e);
+            captionWrap.setAttribute("scale", `${s} ${s} ${s}`);
+          },
+        });
+      }, 900);
+    } else {
+      captionWrap.setAttribute("visible", "false");
+    }
   }
 
   function hideContent() {
     charAnimId++;
     bubbleAnimId++;
+    captionAnimId++;
     revealU.value = 0;
     charEntity.setAttribute("opacity", 0);
     charEntity.setAttribute("position", `0 ${restY - RISE} 0`);
     bubbleWrap.setAttribute("visible", "false");
     bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
+    captionWrap.setAttribute("visible", "false");
+    captionWrap.setAttribute("scale", "0.001 0.001 0.001");
     stopSparkles();
     sparkleEls.forEach((el) => el.setAttribute("visible", "false"));
   }
