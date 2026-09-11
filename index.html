@@ -203,7 +203,7 @@
 
   <div id="start-overlay">
     <img src="./assets/001.png" alt="キャラクター" />
-    <p class="subtitle">イベリアアンソロジー発行記念</p>
+    <p class="subtitle">『俺らの大事なイベリバ』発行記念</p>
     <h1>IBERI-AR</h1>
     <p class="lead">
       カメラを起動して<br />
@@ -497,53 +497,48 @@
     canvas.height = H;
     ctx = canvas.getContext("2d");
 
-    function roundRectPath(x, y, ww, hh, r) {
+    // body + tail traced as ONE continuous outline (rounded rect with a
+    // notch cut into the bottom edge for the tail) so there is no seam to
+    // paper over -- previously the tail was drawn as a separate shape on
+    // top of the body's own (full-width) bottom border, which left a
+    // sliver of that border visible as a stray line under the bubble.
+    const tailX = pad + bodyW * 0.28;
+    const tail = {
+      leftX: tailX - 26 * S,
+      rightX: tailX + 10 * S,
+      tipX: tailX - 8 * S,
+      tipY: pad + bodyH + 46 * S,
+    };
+    function bubblePath(x, y, ww, hh, r) {
       ctx.beginPath();
       ctx.moveTo(x + r, y);
-      ctx.arcTo(x + ww, y, x + ww, y + hh, r);
-      ctx.arcTo(x + ww, y + hh, x, y + hh, r);
-      ctx.arcTo(x, y + hh, x, y, r);
-      ctx.arcTo(x, y, x + ww, y, r);
+      ctx.arcTo(x + ww, y, x + ww, y + r, r); // top edge + top-right corner
+      ctx.arcTo(x + ww, y + hh, x + ww - r, y + hh, r); // right edge + bottom-right corner
+      ctx.lineTo(tail.rightX, y + hh); // bottom edge -> tail
+      ctx.lineTo(tail.tipX, tail.tipY);
+      ctx.lineTo(tail.leftX, y + hh); // tail -> bottom edge
+      ctx.lineTo(x + r, y + hh);
+      ctx.arcTo(x, y + hh, x, y + hh - r, r); // bottom-left corner
+      ctx.arcTo(x, y, x + r, y, r); // left edge + top-left corner
       ctx.closePath();
     }
 
-    // shadow + body
+    // shadow + body + tail (single fill, so the shadow follows the whole shape)
     ctx.save();
     ctx.shadowColor = "rgba(90, 60, 30, 0.35)";
     ctx.shadowBlur = 18 * S;
     ctx.shadowOffsetY = 8 * S;
-    roundRectPath(pad, pad, bodyW, bodyH, radius);
+    bubblePath(pad, pad, bodyW, bodyH, radius);
     ctx.fillStyle = "#fff7ec";
     ctx.fill();
     ctx.restore();
 
-    // outline
-    roundRectPath(pad, pad, bodyW, bodyH, radius);
-    ctx.lineWidth = 8 * S;
-    ctx.strokeStyle = "#c2793a";
-    ctx.stroke();
-
-    // tail (little triangle at bottom-left, pointing down toward the character)
-    const tailX = pad + bodyW * 0.28;
-    const tailY = pad + bodyH;
-    ctx.beginPath();
-    ctx.moveTo(tailX - 26 * S, tailY - 4 * S);
-    ctx.lineTo(tailX + 10 * S, tailY - 4 * S);
-    ctx.lineTo(tailX - 8 * S, tailY + 46 * S);
-    ctx.closePath();
-    ctx.fillStyle = "#fff7ec";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(tailX - 26 * S, tailY - 2 * S);
-    ctx.lineTo(tailX - 8 * S, tailY + 46 * S);
-    ctx.lineTo(tailX + 8 * S, tailY - 2 * S);
+    // outline: one stroke around the same path
+    bubblePath(pad, pad, bodyW, bodyH, radius);
     ctx.lineWidth = 8 * S;
     ctx.strokeStyle = "#c2793a";
     ctx.lineJoin = "round";
     ctx.stroke();
-    // cover the seam where tail meets body
-    ctx.fillStyle = "#fff7ec";
-    ctx.fillRect(pad + 6 * S, pad + bodyH - 10 * S, bodyW - 12 * S, 8 * S);
 
     // text
     ctx.fillStyle = "#a85a25";
