@@ -181,7 +181,7 @@
     white-space: nowrap;
     opacity: 0;
     box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-    transition: opacity 0.3s ease;
+    transition: opacity 0.45s ease;
   }
   .btn-hint.show { opacity: 1; }
   .btn-hint.above {
@@ -1013,12 +1013,30 @@
   // button captions ("📸 でスクショが撮れる" / "▶ で次の作品へ") -- shown only
   // while illustration 001 (the first / default one) is on screen, so
   // first-time visitors get the hint without it cluttering every variant.
+  // They fade in (faster than the illustration's own ~2.2s reveal) only
+  // once 001 has actually appeared, rather than snapping in the instant the
+  // marker is found.
   const shutterHint = document.getElementById("shutter-hint");
   const nextHint = document.getElementById("next-hint");
+  const HINT_DELAY = 1300; // ms after 001 appears before the labels fade in
+  let hintAnimId = 0;
+  let hintShowTimer = null;
+
   function updateButtonHints() {
-    const show = shownNow && currentVariant === 0;
-    shutterHint.classList.toggle("show", show);
-    nextHint.classList.toggle("show", show);
+    const myHint = ++hintAnimId;
+    clearTimeout(hintShowTimer);
+    const shouldShow = shownNow && currentVariant === 0;
+
+    if (!shouldShow) {
+      shutterHint.classList.remove("show");
+      nextHint.classList.remove("show");
+      return;
+    }
+    hintShowTimer = setTimeout(() => {
+      if (myHint !== hintAnimId) return; // superseded by a newer state change
+      shutterHint.classList.add("show");
+      nextHint.classList.add("show");
+    }, HINT_DELAY);
   }
 
   targetEl.addEventListener("targetFound", () => {
