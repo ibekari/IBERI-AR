@@ -688,33 +688,38 @@
 
   // ---------- 1c. bake a small "illustration by <name>" credit badge below
   // the image, so it travels with the same texture and fades in together
-  // with the picture via the usual reveal. The canvas is made a little
-  // taller than the source image and the badge sits in that new strip
-  // (left fully transparent), so it never overlaps the artwork itself.
-  const CREDIT_MARGIN = 0.15; // extra height under the artwork, as a fraction of it
-
+  // with the picture via the usual reveal. The canvas is made taller than
+  // the source image and the badge sits in that new strip (left fully
+  // transparent), so it never overlaps the artwork itself. The strip's
+  // height is derived from the badge's own size (gap + badge + gap) rather
+  // than a fixed fraction, so smaller images still get a proportionate gap.
   function buildCreditedTexture(imgEl, name) {
     const W = imgEl.naturalWidth;
     const H = imgEl.naturalHeight;
-    const marginPx = Math.round(H * CREDIT_MARGIN);
-    const totalH = H + marginPx;
 
+    // measure the badge first (canvas is resized to fit below)
     const canvas = document.createElement("canvas");
     canvas.width = W;
-    canvas.height = totalH;
+    canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(imgEl, 0, 0, W, H);
-    // the new strip below stays fully transparent (canvases start empty)
 
-    const fontPx = Math.round(W * 0.026) + 12;
+    const fontPx = Math.round(W * 0.026) + 22;
     ctx.font = `${fontPx}px ${BUBBLE_FONT}`;
     const label = String(name);
     const padX = fontPx * 0.85;
     const padY = fontPx * 0.5;
     const boxW = ctx.measureText(label).width + padX * 2;
     const boxH = fontPx + padY * 2;
+    const gapAbove = fontPx * 1.6; // space between the artwork and the badge
+    const gapBelow = fontPx * 0.55; // space below the badge
+    const marginPx = Math.round(gapAbove + boxH + gapBelow);
+
+    canvas.height = H + marginPx; // resizing clears the canvas and resets ctx state
+    ctx.drawImage(imgEl, 0, 0, W, H);
+    // the new strip below stays fully transparent (canvases start empty)
+
     const boxX = (W - boxW) / 2;
-    const boxY = H + (marginPx - boxH) / 2; // centred in the new strip
+    const boxY = H + gapAbove;
 
     function roundRectPath(x, y, ww, hh, r) {
       ctx.beginPath();
@@ -731,6 +736,7 @@
     ctx.fill();
 
     ctx.fillStyle = "#fff";
+    ctx.font = `${fontPx}px ${BUBBLE_FONT}`; // re-set: the resize above reset it
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(label, W / 2, boxY + boxH / 2 + fontPx * 0.03);
