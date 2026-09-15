@@ -325,7 +325,7 @@
       <img id="charImg2" src="./assets/002.png" crossorigin="anonymous" />
       <img id="charImg3" src="./assets/003.jpg" crossorigin="anonymous" />
       <img id="charImg4" src="./assets/004.jpg" crossorigin="anonymous" />
-      <img id="charImg5" src="./assets/005_text.png" crossorigin="anonymous" />
+      <img id="charImg5" src="./assets/005.png" crossorigin="anonymous" />
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
@@ -686,66 +686,51 @@
     return { url: canvas.toDataURL("image/png"), aspect: W / H };
   }
 
-  // ---------- 1c. "005": vertical Japanese text baked onto the parchment
-  // image itself (right-to-left columns, paragraphs preserved), so it
-  // reveals together with the picture instead of popping up separately.
-  //
-  // Canvas 2D has no vertical writing mode, so each character is placed by
-  // hand: columns run top-to-bottom and successive columns step leftward;
-  // each "\n" in the source text starts a fresh column (a new paragraph)
-  // with a little extra gap, matching traditional tategaki. (CSS
-  // writing-mode inside an SVG <foreignObject> would lay this out for free,
-  // but Chrome/Safari treat that as tainting the canvas, so toDataURL()
-  // throws -- unusable for a texture we need to read back.)
-  function buildScrollTexture(text) {
-    const bg = document.querySelector("#charImg5");
-    const W = bg.naturalWidth || 842;
-    const H = bg.naturalHeight || 1191;
-
+  // ---------- 1c. bake a small "illustration by <name>" credit badge onto
+  // the bottom-centre of the image, so it travels with the same texture and
+  // fades in together with the picture via the usual reveal. `opaque` skips
+  // the alpha channel (smaller/faster) for illustrations that don't need it.
+  function buildCreditedTexture(imgEl, name, opaque) {
+    const W = imgEl.naturalWidth;
+    const H = imgEl.naturalHeight;
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(bg, 0, 0, W, H);
+    ctx.drawImage(imgEl, 0, 0, W, H);
 
-    // text area, inset from the ornate border
-    const marginRight = W * 0.15; // where the first (rightmost) column sits
-    const marginLeft = W * 0.1; // how far left the columns may go
-    const top = H * 0.15;
-    const bottom = H - H * 0.15;
-
-    const fontPx = W * 0.042;
-    const charPitch = fontPx * 1.28; // top-to-bottom step within a column
-    const colPitch = fontPx * 1.7; // right-to-left step between columns
-    const paragraphGap = fontPx * 0.7; // extra step between paragraphs
-    const charsPerColumn = Math.max(1, Math.floor((bottom - top) / charPitch));
-    const minX = marginLeft + fontPx / 2;
-
+    const fontPx = Math.round(W * 0.026);
     ctx.font = `${fontPx}px ${BUBBLE_FONT}`;
-    ctx.fillStyle = "#4a3624";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    const label = String(name);
+    const padX = fontPx * 0.85;
+    const padY = fontPx * 0.5;
+    const boxW = ctx.measureText(label).width + padX * 2;
+    const boxH = fontPx + padY * 2;
+    const boxX = (W - boxW) / 2;
+    const boxY = H - boxH - H * 0.035;
 
-    let colX = W - marginRight - fontPx / 2;
-    for (const paragraph of String(text).split("\n")) {
-      const chars = Array.from(paragraph);
-      if (chars.length === 0) {
-        colX -= paragraphGap;
-        continue;
-      }
-      let i = 0;
-      do {
-        let y = top + charPitch / 2;
-        for (let n = 0; n < charsPerColumn && i < chars.length; n++, i++) {
-          ctx.fillText(chars[i], colX, y);
-          y += charPitch;
-        }
-        colX -= colPitch;
-      } while (i < chars.length && colX >= minX);
-      colX -= paragraphGap;
+    function roundRectPath(x, y, ww, hh, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + ww, y, x + ww, y + hh, r);
+      ctx.arcTo(x + ww, y + hh, x, y + hh, r);
+      ctx.arcTo(x, y + hh, x, y, r);
+      ctx.arcTo(x, y, x + ww, y, r);
+      ctx.closePath();
     }
 
-    return { url: canvas.toDataURL("image/png"), aspect: W / H };
+    ctx.fillStyle = "rgba(20, 14, 10, 0.55)";
+    roundRectPath(boxX, boxY, boxW, boxH, boxH / 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, W / 2, boxY + boxH / 2 + fontPx * 0.03);
+
+    return opaque
+      ? canvas.toDataURL("image/jpeg", 0.9)
+      : canvas.toDataURL("image/png");
   }
 
   // ---------- 2. animation helper (ease-out-back "pop") ----------
@@ -814,35 +799,39 @@
 
   // What can pop up above the marker. `w` / `h` are the plane size in metres
   // (h/w matches the source image so the feet/bottom sit on the marker).
-  // `text`     -> speech bubble above the character with this (line-breakable) text.
-  // `caption`  -> no speech bubble; instead a small plain caption strip near
-  //               the bottom of the illustration.
-  // `pageText` -> no speech bubble either; instead this text is baked directly
-  //               onto the image as vertical (tategaki) Japanese text, right
-  //               to left, so it fades in together with the picture. Line
-  //               breaks in the string start a new paragraph/column.
+  // `text`    -> speech bubble above the character with this (line-breakable) text.
+  // `caption` -> no speech bubble; instead a small plain caption strip near
+  //              the bottom of the illustration.
+  // `author`  -> credit name baked onto the bottom-centre of the image itself.
+  // `alpha`   -> the source image has real transparency to preserve (PNG);
+  //              omit for opaque illustrations, which bake as JPEG (smaller).
   // `plain: true` -> no sparkle burst.
   const VARIANTS = [
-    { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜" },
-    { img: "#charImg2", w: 1, h: 0.907, text: "好きな台詞を入れられるで！" },
+    { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜", alpha: true, author: "ぶんぶん" },
+    {
+      img: "#charImg2",
+      w: 1,
+      h: 0.907,
+      text: "好きな台詞を入れられるで！",
+      alpha: true,
+      author: "ぶんぶん",
+    },
     {
       img: "#charImg3",
       w: 0.8,
       h: 0.8 * (2048 / 1460),
       plain: true,
       caption: "※吹き出しを表示しないこともできます",
+      author: "ぶんぶん",
     },
-    { img: "#charImg4", w: 0.8, h: 0.8 * (2798 / 2000), plain: true },
+    { img: "#charImg4", w: 0.8, h: 0.8 * (2798 / 2000), plain: true, author: "ぶんぶん" },
     {
       img: "#charImg5",
       w: 0.82,
-      h: 0.82 * (1191 / 842),
+      h: 0.82 * (2000 / 1413),
       plain: true,
-      pageText:
-        "「明日、休みになった。海行こ」\n" +
-        "　ポルトガルからメッセージが届く。全く、こんな短い文で俺を呼びつけるなんて、本当に気ままな奴だ。\n" +
-        "「船、用意しといてな」\n" +
-        "　俺はそれだけを返す。すぐに、親指を立てた絵文字のリアクションがついた。",
+      alpha: true,
+      author: "ろき",
     },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
@@ -874,25 +863,18 @@
     captionImg.setAttribute("src", url);
   }
 
-  // Guards against a slow `pageText` render (async) landing after a newer
-  // applyVariant() call has already taken over -- see the comment below.
-  let variantGen = 0;
-
-  async function applyVariant(v) {
-    const myGen = ++variantGen;
+  function applyVariant(v) {
     restY = v.h / 2;
     charEntity.setAttribute("width", v.w || 1);
     charEntity.setAttribute("height", v.h);
 
-    if (v.pageText) {
-      // composited on a canvas (async: rasterises an SVG), so the image and
-      // its vertical text end up as one texture and fade in together
-      const { url } = await buildScrollTexture(v.pageText);
-      if (myGen !== variantGen) return false; // superseded meanwhile
-      charEntity.setAttribute("src", url);
-    } else {
-      charEntity.setAttribute("src", v.img);
+    // the credited texture only depends on this variant's own (fixed) image
+    // and name, so it's built once and cached on the variant itself
+    if (!v._creditedSrc) {
+      const imgEl = document.querySelector(v.img);
+      v._creditedSrc = buildCreditedTexture(imgEl, v.author, !v.alpha);
     }
+    charEntity.setAttribute("src", v._creditedSrc);
 
     if (v.text) applyBubble(v.text);
     else {
@@ -905,7 +887,6 @@
       captionWrap.setAttribute("visible", "false");
       captionWrap.setAttribute("scale", "0.001 0.001 0.001");
     }
-    return true;
   }
 
   function setBubbleTexture() {
@@ -1154,11 +1135,9 @@
   targetEl.addEventListener("targetFound", () => {
     document.getElementById("hint").classList.add("hidden");
     shownNow = true;
-    applyVariant(VARIANTS[currentVariant]).then((applied) => {
-      if (!applied || !shownNow) return; // marker lost again before it was ready
-      showContent();
-      updateButtonHints();
-    });
+    applyVariant(VARIANTS[currentVariant]);
+    showContent();
+    updateButtonHints();
   });
   targetEl.addEventListener("targetLost", () => {
     document.getElementById("hint").classList.remove("hidden");
@@ -1171,12 +1150,10 @@
   function switchVariant(dir) {
     currentVariant =
       (currentVariant + dir + VARIANTS.length) % VARIANTS.length;
-    applyVariant(VARIANTS[currentVariant]).then((applied) => {
-      if (!applied) return; // superseded by an even newer switch
-      if (shownNow) showContent();
-      else showToast(`イラスト ${currentVariant + 1} / ${VARIANTS.length}`);
-      updateButtonHints();
-    });
+    applyVariant(VARIANTS[currentVariant]);
+    if (shownNow) showContent();
+    else showToast(`イラスト ${currentVariant + 1} / ${VARIANTS.length}`);
+    updateButtonHints();
   }
   document.getElementById("prev-btn").addEventListener("click", () => switchVariant(-1));
   document.getElementById("next-btn").addEventListener("click", () => switchVariant(1));
