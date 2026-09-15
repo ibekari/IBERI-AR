@@ -1272,37 +1272,16 @@
       });
   });
 
-  // ---------- test mode: ?illust=N shows one illustration immediately,
-  // no camera/marker needed -- for quickly checking how a single variant
-  // looks (reveal, bubble/caption, credit badge) without hunting for the
-  // printed marker. ◀ ▶ still switch between illustrations while in it.
-  (function setupTestMode() {
+  // ---------- ?illust=N: pre-select which illustration shows once the
+  // marker is found, for testing one variant without having to press ◀ ▶
+  // after every scan. Camera start and marker detection still work exactly
+  // as normal -- this only changes which VARIANTS entry is "current".
+  (function applyIllustParam() {
     const params = new URLSearchParams(location.search);
     if (!params.has("illust")) return;
     let n = parseInt(params.get("illust"), 10);
     if (!Number.isFinite(n)) n = 1;
     currentVariant = Math.min(Math.max(n, 1), VARIANTS.length) - 1;
-
-    function begin() {
-      // a fixed, valid "marker" pose stand-on-ground can work with -- flat
-      // on the ground, a couple of metres in front of and below the camera
-      if (typeof window.__enableTilt === "function") window.__enableTilt();
-      const tgt = targetEl.object3D;
-      tgt.matrixAutoUpdate = true;
-      tgt.position.set(0, -0.5, -1.8);
-      tgt.rotation.set(-Math.PI / 2, 0, 0);
-      tgt.visible = true;
-
-      startOverlay.classList.add("hidden");
-      hint.classList.add("hidden");
-      controls.classList.remove("hidden");
-      shownNow = true;
-      applyVariant(VARIANTS[currentVariant]);
-      showContent();
-      updateButtonHints();
-    }
-    if (sceneEl.hasLoaded) begin();
-    else sceneEl.addEventListener("loaded", begin);
   })();
 })();
 </script>
