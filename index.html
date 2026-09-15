@@ -686,20 +686,47 @@
     return { url: canvas.toDataURL("image/png"), aspect: W / H };
   }
 
-  // ---------- 1c. bake a small "illustration by <name>" credit badge onto
-  // the bottom-centre of the image, so it travels with the same texture and
-  // fades in together with the picture via the usual reveal. `opaque` skips
-  // the alpha channel (smaller/faster) for illustrations that don't need it.
+  // ---------- 1c. bake a small "illustration by <name>" credit badge below
+  // the image, so it travels with the same texture and fades in together
+  // with the picture via the usual reveal. The canvas is made a little
+  // taller than the source image and the badge sits in that new strip, so
+  // it never overlaps the artwork itself. `opaque` skips the alpha channel
+  // (smaller/faster) for illustrations that don't need it.
+  const CREDIT_MARGIN = 0.08; // extra height under the artwork, as a fraction of it
+
   function buildCreditedTexture(imgEl, name, opaque) {
     const W = imgEl.naturalWidth;
     const H = imgEl.naturalHeight;
+    const marginPx = Math.round(H * CREDIT_MARGIN);
+    const totalH = H + marginPx;
+
     const canvas = document.createElement("canvas");
     canvas.width = W;
-    canvas.height = H;
+    canvas.height = totalH;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(imgEl, 0, 0, W, H);
 
-    const fontPx = Math.round(W * 0.026);
+    if (opaque) {
+      // no alpha channel to fall back on, so extend the image's own
+      // bottom-edge colour into the new strip instead of leaving it black
+      let fill = "#20140a";
+      try {
+        const row = ctx.getImageData(0, H - 1, W, 1).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        const step = Math.max(1, Math.floor(W / 64));
+        for (let x = 0; x < W; x += step) {
+          const i = x * 4;
+          r += row[i]; g += row[i + 1]; b += row[i + 2]; n++;
+        }
+        if (n) fill = `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`;
+      } catch (e) {}
+      ctx.fillStyle = fill;
+      ctx.fillRect(0, H, W, marginPx);
+    }
+    // (alpha textures leave the new strip transparent, same as the rest of
+    // the app's floating UI)
+
+    const fontPx = Math.round(W * 0.026) + 2;
     ctx.font = `${fontPx}px ${BUBBLE_FONT}`;
     const label = String(name);
     const padX = fontPx * 0.85;
@@ -707,7 +734,7 @@
     const boxW = ctx.measureText(label).width + padX * 2;
     const boxH = fontPx + padY * 2;
     const boxX = (W - boxW) / 2;
-    const boxY = H - boxH - H * 0.035;
+    const boxY = H + (marginPx - boxH) / 2; // centred in the new strip
 
     function roundRectPath(x, y, ww, hh, r) {
       ctx.beginPath();
@@ -719,7 +746,7 @@
       ctx.closePath();
     }
 
-    ctx.fillStyle = "rgba(20, 14, 10, 0.55)";
+    ctx.fillStyle = "rgba(20, 14, 10, 0.6)";
     roundRectPath(boxX, boxY, boxW, boxH, boxH / 2);
     ctx.fill();
 
@@ -728,9 +755,10 @@
     ctx.textBaseline = "middle";
     ctx.fillText(label, W / 2, boxY + boxH / 2 + fontPx * 0.03);
 
-    return opaque
-      ? canvas.toDataURL("image/jpeg", 0.9)
-      : canvas.toDataURL("image/png");
+    return {
+      url: opaque ? canvas.toDataURL("image/jpeg", 0.9) : canvas.toDataURL("image/png"),
+      marginFrac: marginPx / H,
+    };
   }
 
   // ---------- 2. animation helper (ease-out-back "pop") ----------
@@ -864,17 +892,21 @@
   }
 
   function applyVariant(v) {
-    restY = v.h / 2;
-    charEntity.setAttribute("width", v.w || 1);
-    charEntity.setAttribute("height", v.h);
-
     // the credited texture only depends on this variant's own (fixed) image
     // and name, so it's built once and cached on the variant itself
-    if (!v._creditedSrc) {
+    if (!v._credited) {
       const imgEl = document.querySelector(v.img);
-      v._creditedSrc = buildCreditedTexture(imgEl, v.author, !v.alpha);
+      v._credited = buildCreditedTexture(imgEl, v.author, !v.alpha);
     }
-    charEntity.setAttribute("src", v._creditedSrc);
+    const m = v._credited.marginFrac;
+    // the plane is taller than the artwork alone (room for the credit strip
+    // below it), so the resting position is shifted up by half that extra
+    // height -- this keeps the artwork's own bottom edge (not the strip's)
+    // sitting on the marker.
+    restY = v.h * (0.5 - m / 2);
+    charEntity.setAttribute("width", v.w || 1);
+    charEntity.setAttribute("height", v.h * (1 + m));
+    charEntity.setAttribute("src", v._credited.url);
 
     if (v.text) applyBubble(v.text);
     else {
