@@ -353,15 +353,17 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <!-- rotation: 180° on Y because the model's own "front" faces the
-             opposite way from the flat illustrations' convention; -90° on X
-             tilts the front up toward the camera. Verified directly in a
-             render (not just by description): 0 reads as top-down, -45 and
-             -90 both read as upright and front-facing, +90 (a same-axis 180°
-             swap from -90) reads as upside down -- the sign matters, positive
-             is wrong (position/scale come from its bounding box, see
-             script). -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="-90 180 0" visible="false"></a-entity>
+        <!-- rotation: loaded raw (identity) into an isolated three.js scene
+             and rendered from a fixed +Z camera, this model already stands
+             upright (+Y) facing the camera (+Z) -- no Y flip needed at all,
+             unlike the flat illustrations. The earlier "180 on Y" was wrong;
+             combined with any X tilt it flips the model to show its back,
+             which is what caused the repeated back-facing/upside-down
+             reports. -45° on X tilts the front up toward the camera, which
+             a render sweep from 0-80° camera elevation confirmed stays
+             front-facing and upright throughout (position/scale come from
+             its bounding box, see script). -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="-45 0 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
@@ -514,9 +516,15 @@
       let upRaw = markerUp;
       const g = window.__worldUp;
       if (g && fin(g) && g.lengthSq() > 0.1) {
-        const gg = g.clone().normalize();
-        // trust the sensor only when it broadly agrees with the marker
-        if (gg.dot(markerUp) > 0.6) upRaw = gg;
+        // Real gravity is authoritative regardless of how the marker itself
+        // is physically held -- flat on a table, taped to a wall, or shown
+        // upright on a screen. Previously this only trusted gravity when it
+        // roughly agreed with the marker's own normal, on the assumption
+        // that disagreement meant sensor noise; but that assumption only
+        // holds for a flat/table marker, and it made the marker-normal
+        // fallback win for any marker held upright -- exactly backwards,
+        // since gravity is what's actually correct there.
+        upRaw = g.clone().normalize();
       }
       // The marker's rotation estimate (which markerUp comes from) is
       // noisiest right when a marker is first found, before tracking has
