@@ -354,11 +354,14 @@
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
         <!-- rotation: 180° on Y because the model's own "front" faces the
-             opposite way from the flat illustrations' convention; 90° on X
-             tilts the front up toward the camera (previously -90, which put
-             it upside down) (position/scale come from its bounding box, see
+             opposite way from the flat illustrations' convention; -90° on X
+             tilts the front up toward the camera. Verified directly in a
+             render (not just by description): 0 reads as top-down, -45 and
+             -90 both read as upright and front-facing, +90 (a same-axis 180°
+             swap from -90) reads as upside down -- the sign matters, positive
+             is wrong (position/scale come from its bounding box, see
              script). -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="90 180 0" visible="false"></a-entity>
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="-90 180 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
@@ -477,6 +480,7 @@
       this._worldQ = new THREE.Quaternion();
       this._fwd = new THREE.Vector3();
       this._pos = new THREE.Vector3();
+      this._up = new THREE.Vector3();
       this._ready = false;
     },
     tick: function (time, dt) {
@@ -507,13 +511,21 @@
 
       // ---- 2. up direction ----
       const markerUp = new THREE.Vector3(0, 0, 1).applyQuaternion(parentQ).normalize();
-      let up = markerUp;
+      let upRaw = markerUp;
       const g = window.__worldUp;
       if (g && fin(g) && g.lengthSq() > 0.1) {
         const gg = g.clone().normalize();
         // trust the sensor only when it broadly agrees with the marker
-        if (gg.dot(markerUp) > 0.6) up = gg;
+        if (gg.dot(markerUp) > 0.6) upRaw = gg;
       }
+      // The marker's rotation estimate (which markerUp comes from) is
+      // noisiest right when a marker is first found, before tracking has
+      // settled -- smooth it the same way position is smoothed above, so
+      // that noise doesn't feed straight into the forward-direction math
+      // below every frame.
+      if (!this._ready) this._up.copy(upRaw);
+      else this._up.lerp(upRaw, 1 - Math.exp(-step / 0.3));
+      const up = this._up.clone().normalize();
 
       // ---- 3. forward direction ----
       // slow follow of the horizontal direction to the camera
