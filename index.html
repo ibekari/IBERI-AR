@@ -549,11 +549,27 @@
       // (world orientation === the smoothed target) instead of leaking through
       // a lagging local slerp.
       if (!this._ready) {
-        this._worldQ.copy(worldQ);
+        // MindAR's rotation estimate for a marker that was *just* found can
+        // still be unsettled for the first second or so (worse the more
+        // rotationally-symmetric the printed marker is), occasionally
+        // starting out flipped ~180° before it locks in. Snapping straight
+        // to it would flash the wrong side, so start from a "face the
+        // camera" guess instead -- always a reasonable-looking orientation
+        // -- and let the slerp below ease into the real target as tracking
+        // settles, same as it damps ordinary tracking tremor.
+        const campFwd = camWorld.clone().sub(this._pos);
+        campFwd.addScaledVector(up, -campFwd.dot(up));
+        if (campFwd.lengthSq() > 1e-6) {
+          campFwd.normalize();
+          const r0 = new THREE.Vector3().crossVectors(up, campFwd).normalize();
+          const u0 = new THREE.Vector3().crossVectors(campFwd, r0).normalize();
+          this._worldQ.setFromRotationMatrix(new THREE.Matrix4().makeBasis(r0, u0, campFwd));
+        } else {
+          this._worldQ.copy(worldQ);
+        }
         this._ready = true;
-      } else {
-        this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       }
+      this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
 
       // ---- 5. dynamic front-tilt for the 3D model ----
