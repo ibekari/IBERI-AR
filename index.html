@@ -466,7 +466,12 @@
    *   - rotation  : slerp toward the target (~0.4 s), so tracking tremor is
    *                 low-pass filtered instead of shown frame by frame.
    * The marker's own rotation noise cancels out: the entity's *world*
-   * orientation is rebuilt each frame from stable vectors.
+   * orientation is rebuilt each frame from stable vectors. Everything --
+   * including the .glb model -- always faces the camera this way: standing
+   * it upright using the marker's own printed rotation instead was tried for
+   * the model, but that rotation estimate is unreliable right after a marker
+   * is first found (see the "settle" comment below), so it could briefly
+   * show the wrong side.
    */
   AFRAME.registerComponent("stand-on-ground", {
     init: function () {
@@ -474,10 +479,6 @@
       this._fwd = new THREE.Vector3();
       this._pos = new THREE.Vector3();
       this._ready = false;
-      // false = just stand upright (rotates with the physical marker's
-      // printed orientation, never with the viewer) -- toggled by
-      // applyVariant() for 3D-model variants that don't need billboarding.
-      this.billboard = true;
     },
     tick: function (time, dt) {
       const obj = this.el.object3D;
@@ -516,21 +517,15 @@
       }
 
       // ---- 3. forward direction ----
-      if (this.billboard) {
-        // slow follow of the horizontal direction to the camera
-        const toCam = camWorld.clone().sub(this._pos);
-        toCam.addScaledVector(up, -toCam.dot(up));
-        if (toCam.lengthSq() > 0.03) {
-          toCam.normalize();
-          if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
-          else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
-        } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
-          // camera almost overhead at first sight: use the card's printed "up" edge
-          this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
-        }
-      } else {
-        // just stand upright: always the marker's own printed "up" edge, so
-        // it turns with the physical card but never with the viewer
+      // slow follow of the horizontal direction to the camera
+      const toCam = camWorld.clone().sub(this._pos);
+      toCam.addScaledVector(up, -toCam.dot(up));
+      if (toCam.lengthSq() > 0.03) {
+        toCam.normalize();
+        if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
+        else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
+      } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
+        // camera almost overhead at first sight: use the card's printed "up" edge
         this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
       }
       this._fwd.addScaledVector(up, -this._fwd.dot(up));
@@ -584,21 +579,19 @@
       // so it can't tell these two cases apart. Real gravity can: it's how
       // far above the phone's own horizon the camera is actually looking,
       // regardless of which way the marker itself is held.
-      if (!this.billboard) {
-        if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
-        if (this._modelEntity) {
-          let tiltDeg = 45; // no gravity reading yet -- keep the old fixed guess
-          const gUp = window.__worldUp;
-          if (gUp && fin(gUp) && gUp.lengthSq() > 0.1) {
-            const trueUp = gUp.clone().normalize();
-            const toCam = camWorld.clone().sub(this._pos);
-            const cUp = toCam.dot(trueUp);
-            const cHoriz = toCam.clone().addScaledVector(trueUp, -cUp).length();
-            const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
-            tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.6, 0, 45);
-          }
-          this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
+      if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
+      if (this._modelEntity && this._modelEntity.object3D.visible) {
+        let tiltDeg = 45; // no gravity reading yet -- keep the old fixed guess
+        const gUp = window.__worldUp;
+        if (gUp && fin(gUp) && gUp.lengthSq() > 0.1) {
+          const trueUp = gUp.clone().normalize();
+          const toCamG = camWorld.clone().sub(this._pos);
+          const cUp = toCamG.dot(trueUp);
+          const cHoriz = toCamG.clone().addScaledVector(trueUp, -cUp).length();
+          const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
+          tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.6, 0, 45);
         }
+        this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
       }
     },
   });
@@ -885,7 +878,7 @@
   // `author`  -> credit name baked onto the bottom-centre of the image itself.
   // `plain: true` -> no sparkle burst.
   // `model: true` -> a .glb (see modelEntity) instead of a flat illustration.
-  //              It just stands upright (no billboarding) and is scaled/
+  //              Faces the camera the same as everything else and is scaled/
   //              positioned automatically from its own bounding box.
   const VARIANTS = [
     { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜", author: "ぶんぶん" },
@@ -1009,17 +1002,6 @@
   }
 
   function applyVariant(v) {
-    const soc = floatGroupEl.components["stand-on-ground"];
-    const wantBillboard = !v.model;
-    if (soc.billboard !== wantBillboard) {
-      // switching how the group is oriented (camera-facing <-> marker-relative)
-      // would otherwise slerp from the old orientation, briefly showing the
-      // wrong side before catching up -- force an immediate re-snap instead.
-      soc._ready = false;
-      soc._fwd.set(0, 0, 0);
-    }
-    soc.billboard = wantBillboard;
-
     if (v.model) {
       charEntity.setAttribute("visible", "false");
       modelEntity.setAttribute("visible", "true");
