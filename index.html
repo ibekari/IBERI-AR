@@ -353,10 +353,13 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <!-- rotation: the model's own "front" faces the opposite way from
-             the flat illustrations' convention, so it's turned 180° here
-             (position/scale are set from its bounding box in the script). -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="0 180 0" visible="false"></a-entity>
+        <!-- rotation: 180° because the model's own "front" faces the
+             opposite way from the flat illustrations' convention; -45° on
+             X because with the marker flat on the ground the camera looks
+             down at it, and a perfectly upright model reads as a top-down
+             view from there -- tilting the front up toward the camera
+             compensates (position/scale come from its bounding box, see script). -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="-45 180 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
@@ -864,13 +867,17 @@
       plain: true,
       author: "ろき",
     },
-    { model: true, plain: true },
+    { model: true },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const CAPTION_W = 0.9; // world width of the plain-caption pill
   const RISE = 0.28; // how far below its resting spot the character starts
   // resting height: half the character height, so the feet sit on the marker plane
   let restY = VARIANTS[0].h / 2;
+  // full height of whatever is currently shown, used only to size the
+  // sparkle spread (restY alone isn't a reliable stand-in -- for a .glb
+  // model it's just a small ground offset, not half its height)
+  let contentHeight = VARIANTS[0].h;
 
   // which illustration is selected (via the ◀ ▶ arrows), and whether the
   // character is on screen right now
@@ -965,6 +972,7 @@
       modelEntity.setAttribute("scale", `${modelFit.scale} ${modelFit.scale} ${modelFit.scale}`);
       restY = modelFit.restY;
       modelEntity.setAttribute("position", `0 ${restY} 0`);
+      contentHeight = MODEL_TARGET_HEIGHT; // for the sparkle spread below
     } else {
       modelEntity.setAttribute("visible", "false");
       charEntity.setAttribute("visible", "true");
@@ -981,8 +989,9 @@
       // height -- this keeps the artwork's own bottom edge (not the strip's)
       // sitting on the marker.
       restY = v.h * (0.5 - m / 2);
+      contentHeight = v.h * (1 + m); // for the sparkle spread below
       charEntity.setAttribute("width", v.w || 1);
-      charEntity.setAttribute("height", v.h * (1 + m));
+      charEntity.setAttribute("height", contentHeight);
       charEntity.setAttribute("src", v._credited.url);
     }
 
@@ -1092,7 +1101,7 @@
   }
   function burstSparkles() {
     stopSparkles();
-    const top = restY * 2 + 0.15;
+    const top = contentHeight + 0.15;
     // spread the burst across the (slower) reveal
     sparkleEls.forEach((el, i) =>
       setTimeout(() => playSparkle(el, top, false), i * 26 + Math.random() * 70)
@@ -1109,7 +1118,7 @@
     ambientTimer = setInterval(() => {
       const el = sparkleEls[Math.floor(Math.random() * sparkleEls.length)];
       if (el.getAttribute("visible") === false)
-        playSparkle(el, restY * 2, Math.random() < 0.5);
+        playSparkle(el, contentHeight, Math.random() < 0.5);
     }, 420);
   }
 
@@ -1124,15 +1133,24 @@
     const v = VARIANTS[currentVariant];
 
     if (v.model) {
-      // simple fade + rise -- the flat image's per-pixel wipe shader doesn't
-      // apply to an arbitrary multi-material 3D model
+      // same pacing as the illustrations (slow opacity fade + a separate,
+      // quicker rise) -- just a plain fade instead of the per-pixel wipe,
+      // since that shader doesn't apply to an arbitrary multi-material
+      // 3D model
       setModelOpacity(0);
       animate({
-        duration: 1400,
-        easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+        duration: 2200,
+        easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
         onUpdate: (e) => {
           if (myChar !== charAnimId) return;
           setModelOpacity(e);
+        },
+      });
+      animate({
+        duration: 1500,
+        easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+        onUpdate: (e) => {
+          if (myChar !== charAnimId) return;
           const y = restY - RISE * (1 - e);
           modelEntity.setAttribute("position", `0 ${y} 0`);
         },
