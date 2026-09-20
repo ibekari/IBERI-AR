@@ -1200,14 +1200,15 @@
       // stopped moving (with a cap, in case it never fully settles) instead
       // of a fixed delay. Nothing is visible yet, so the wait happens
       // off-screen.
-      const MODEL_SETTLE_MAX_MS = 4000;
+      const MODEL_SETTLE_HOLD_MS = 1800;
+      const MODEL_SETTLE_MAX_MS = 6000;
       const settleStart = performance.now();
       const soc = floatGroupEl.components["stand-on-ground"];
       soc.resetSettle();
       const waitForSettle = () => {
         if (myChar !== charAnimId) return;
         const waited = performance.now() - settleStart;
-        if (!soc.settled(300) && waited < MODEL_SETTLE_MAX_MS) {
+        if (!soc.settled(MODEL_SETTLE_HOLD_MS) && waited < MODEL_SETTLE_MAX_MS) {
           requestAnimationFrame(waitForSettle);
           return;
         }
