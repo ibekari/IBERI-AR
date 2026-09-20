@@ -353,12 +353,12 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <!-- rotation: 180° because the model's own "front" faces the
-             opposite way from the flat illustrations' convention; -45° on
-             X because with the marker flat on the ground the camera looks
-             down at it, and a perfectly upright model reads as a top-down
-             view from there -- tilting the front up toward the camera
-             compensates (position/scale come from its bounding box, see script). -->
+        <!-- rotation: 180° on Y because the model's own "front" faces the
+             opposite way from the flat illustrations' convention. The X tilt
+             is set dynamically every frame by stand-on-ground (based on the
+             camera's actual elevation over the marker) -- -45 here is just
+             the fallback shown before tracking starts (position/scale come
+             from its bounding box, see script). -->
         <a-entity id="modelEntity" gltf-model="#model010" rotation="-45 180 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
@@ -555,6 +555,35 @@
         this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       }
       obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
+
+      // ---- 5. dynamic front-tilt for the 3D model ----
+      // A flat model standing bolt upright reads as a top-down view when the
+      // *camera* is held above and looking down (e.g. a marker flat on a
+      // table, phone at arm's length pointed down at it) -- but the same
+      // tilt looks wrong when the camera is roughly level with the marker
+      // (e.g. a marker held upright on a screen, phone held level with it).
+      // Note "up" above is often the marker's own normal (whenever gravity
+      // disagrees with it, e.g. exactly the upright-marker case), and that
+      // normal is by construction always close to the camera direction --
+      // so it can't tell these two cases apart. Real gravity can: it's how
+      // far above the phone's own horizon the camera is actually looking,
+      // regardless of which way the marker itself is held.
+      if (!this.billboard) {
+        if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
+        if (this._modelEntity) {
+          let tiltDeg = 45; // no gravity reading yet -- keep the old fixed guess
+          const gUp = window.__worldUp;
+          if (gUp && fin(gUp) && gUp.lengthSq() > 0.1) {
+            const trueUp = gUp.clone().normalize();
+            const toCam = camWorld.clone().sub(this._pos);
+            const cUp = toCam.dot(trueUp);
+            const cHoriz = toCam.clone().addScaledVector(trueUp, -cUp).length();
+            const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
+            tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.6, 0, 45);
+          }
+          this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
+        }
+      }
     },
   });
 </script>
