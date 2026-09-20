@@ -1166,23 +1166,32 @@
       // since that shader doesn't apply to an arbitrary multi-material
       // 3D model
       setModelOpacity(0);
-      animate({
-        duration: 2200,
-        easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
-        onUpdate: (e) => {
-          if (myChar !== charAnimId) return;
-          setModelOpacity(e);
-        },
-      });
-      animate({
-        duration: 1500,
-        easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
-        onUpdate: (e) => {
-          if (myChar !== charAnimId) return;
-          const y = restY - RISE * (1 - e);
-          modelEntity.setAttribute("position", `0 ${y} 0`);
-        },
-      });
+      // stand-on-ground's own smoothing (the up vector, then the slerp to
+      // it) takes a beat to settle right after a marker is freshly found,
+      // which briefly showed the wrong side while the model was already
+      // fading in. Hold it invisible for that beat instead -- nothing is
+      // visible yet, so the settling happens off-screen.
+      const MODEL_SETTLE_MS = 900;
+      setTimeout(() => {
+        if (myChar !== charAnimId) return;
+        animate({
+          duration: 2200,
+          easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
+          onUpdate: (e) => {
+            if (myChar !== charAnimId) return;
+            setModelOpacity(e);
+          },
+        });
+        animate({
+          duration: 1500,
+          easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+          onUpdate: (e) => {
+            if (myChar !== charAnimId) return;
+            const y = restY - RISE * (1 - e);
+            modelEntity.setAttribute("position", `0 ${y} 0`);
+          },
+        });
+      }, MODEL_SETTLE_MS);
     } else {
       patchReveal();
 
