@@ -326,6 +326,7 @@
       <img id="charImg3" src="./assets/003.jpg" crossorigin="anonymous" />
       <img id="charImg4" src="./assets/004.jpg" crossorigin="anonymous" />
       <img id="charImg5" src="./assets/005.png" crossorigin="anonymous" />
+      <a-asset-item id="model010" src="./assets/010.glb"></a-asset-item>
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
@@ -349,6 +350,10 @@
           transparent="true"
           material="alphaTest: 0.05; side: double"
         ></a-image>
+
+        <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
+             are computed from its bounding box once loaded -- see the script. -->
+        <a-entity id="modelEntity" gltf-model="#model010" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
@@ -463,6 +468,10 @@
       this._fwd = new THREE.Vector3();
       this._pos = new THREE.Vector3();
       this._ready = false;
+      // false = just stand upright (rotates with the physical marker's
+      // printed orientation, never with the viewer) -- toggled by
+      // applyVariant() for 3D-model variants that don't need billboarding.
+      this.billboard = true;
     },
     tick: function (time, dt) {
       const obj = this.el.object3D;
@@ -500,15 +509,22 @@
         if (gg.dot(markerUp) > 0.6) up = gg;
       }
 
-      // ---- 3. forward = slow follow of the horizontal dir to the camera ----
-      const toCam = camWorld.clone().sub(this._pos);
-      toCam.addScaledVector(up, -toCam.dot(up));
-      if (toCam.lengthSq() > 0.03) {
-        toCam.normalize();
-        if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
-        else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
-      } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
-        // camera almost overhead at first sight: use the card's printed "up" edge
+      // ---- 3. forward direction ----
+      if (this.billboard) {
+        // slow follow of the horizontal direction to the camera
+        const toCam = camWorld.clone().sub(this._pos);
+        toCam.addScaledVector(up, -toCam.dot(up));
+        if (toCam.lengthSq() > 0.03) {
+          toCam.normalize();
+          if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
+          else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
+        } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
+          // camera almost overhead at first sight: use the card's printed "up" edge
+          this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
+        }
+      } else {
+        // just stand upright: always the marker's own printed "up" edge, so
+        // it turns with the physical card but never with the viewer
         this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
       }
       this._fwd.addScaledVector(up, -this._fwd.dot(up));
@@ -802,7 +818,9 @@
   // ---------- 3. wire everything up once the scene is ready ----------
   const sceneEl = document.querySelector("a-scene");
   const targetEl = document.querySelector("#target");
+  const floatGroupEl = document.querySelector("#floatGroup");
   const charEntity = document.querySelector("#charEntity");
+  const modelEntity = document.querySelector("#modelEntity");
   const bubbleWrap = document.querySelector("#bubble");
   const bubbleImg = document.querySelector("#bubbleImg");
   const captionWrap = document.querySelector("#caption");
@@ -815,6 +833,9 @@
   //              the bottom of the illustration.
   // `author`  -> credit name baked onto the bottom-centre of the image itself.
   // `plain: true` -> no sparkle burst.
+  // `model: true` -> a .glb (see modelEntity) instead of a flat illustration.
+  //              It just stands upright (no billboarding) and is scaled/
+  //              positioned automatically from its own bounding box.
   const VARIANTS = [
     { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜", author: "ぶんぶん" },
     {
@@ -840,6 +861,7 @@
       plain: true,
       author: "ろき",
     },
+    { model: true, plain: true },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const CAPTION_W = 0.9; // world width of the plain-caption pill
@@ -870,22 +892,96 @@
     captionImg.setAttribute("src", url);
   }
 
-  function applyVariant(v) {
-    // the credited texture only depends on this variant's own (fixed) image
-    // and name, so it's built once and cached on the variant itself
-    if (!v._credited) {
-      const imgEl = document.querySelector(v.img);
-      v._credited = buildCreditedTexture(imgEl, v.author);
+  // ---------- .glb model fit + fade helpers ----------
+  // The model's real size/proportions aren't known until it finishes
+  // loading, so it starts with a sane placeholder and self-corrects the
+  // moment its bounding box is available -- decoupled from applyVariant's
+  // own (synchronous) flow.
+  const MODEL_TARGET_HEIGHT = 1; // metres, tallest dimension of the .glb
+  let modelFit = { scale: 1, restY: 0.5 };
+
+  // Box3().setFromObject(root) would walk *up* through floatGroup/#target to
+  // compute world matrices -- but MindAR leaves #target's matrix degenerate
+  // until the marker has actually been seen once, which poisons the box with
+  // NaN on a fresh load. This instead accumulates the box using only local
+  // (child-relative) matrices from `root` down, so it's independent of
+  // whatever is above modelEntity in the scene graph.
+  function localBoundingBox(root) {
+    const box = new THREE.Box3();
+    const meshBox = new THREE.Box3();
+    (function walk(node, parentMatrix) {
+      const local = new THREE.Matrix4().compose(node.position, node.quaternion, node.scale);
+      const world = new THREE.Matrix4().multiplyMatrices(parentMatrix, local);
+      if (node.isMesh && node.geometry) {
+        if (!node.geometry.boundingBox) node.geometry.computeBoundingBox();
+        meshBox.copy(node.geometry.boundingBox).applyMatrix4(world);
+        box.union(meshBox);
+      }
+      for (const child of node.children) walk(child, world);
+    })(root, new THREE.Matrix4());
+    return box;
+  }
+
+  function refreshModelFit() {
+    const root = modelEntity.getObject3D("mesh");
+    if (!root) return;
+    const box = localBoundingBox(root);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const scale = size.y > 1e-6 ? MODEL_TARGET_HEIGHT / size.y : 1;
+    modelFit = { scale, restY: -box.min.y * scale };
+    if (VARIANTS[currentVariant] && VARIANTS[currentVariant].model) {
+      restY = modelFit.restY;
+      modelEntity.setAttribute("scale", `${scale} ${scale} ${scale}`);
+      modelEntity.setAttribute("position", `0 ${restY} 0`);
     }
-    const m = v._credited.marginFrac;
-    // the plane is taller than the artwork alone (room for the credit strip
-    // below it), so the resting position is shifted up by half that extra
-    // height -- this keeps the artwork's own bottom edge (not the strip's)
-    // sitting on the marker.
-    restY = v.h * (0.5 - m / 2);
-    charEntity.setAttribute("width", v.w || 1);
-    charEntity.setAttribute("height", v.h * (1 + m));
-    charEntity.setAttribute("src", v._credited.url);
+  }
+  if (modelEntity.getObject3D("mesh")) refreshModelFit();
+  else modelEntity.addEventListener("model-loaded", refreshModelFit);
+
+  function setModelOpacity(opacity) {
+    const root = modelEntity.getObject3D("mesh");
+    if (!root) return;
+    root.traverse((node) => {
+      if (!node.isMesh || !node.material) return;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      for (const mat of mats) {
+        mat.transparent = true;
+        mat.opacity = opacity;
+        mat.depthWrite = opacity >= 0.999; // avoid transparency-sorting glitches mid-fade
+      }
+    });
+  }
+
+  function applyVariant(v) {
+    floatGroupEl.components["stand-on-ground"].billboard = !v.model;
+
+    if (v.model) {
+      charEntity.setAttribute("visible", "false");
+      modelEntity.setAttribute("visible", "true");
+      modelEntity.setAttribute("scale", `${modelFit.scale} ${modelFit.scale} ${modelFit.scale}`);
+      restY = modelFit.restY;
+      modelEntity.setAttribute("position", `0 ${restY} 0`);
+    } else {
+      modelEntity.setAttribute("visible", "false");
+      charEntity.setAttribute("visible", "true");
+
+      // the credited texture only depends on this variant's own (fixed) image
+      // and name, so it's built once and cached on the variant itself
+      if (!v._credited) {
+        const imgEl = document.querySelector(v.img);
+        v._credited = buildCreditedTexture(imgEl, v.author);
+      }
+      const m = v._credited.marginFrac;
+      // the plane is taller than the artwork alone (room for the credit strip
+      // below it), so the resting position is shifted up by half that extra
+      // height -- this keeps the artwork's own bottom edge (not the strip's)
+      // sitting on the marker.
+      restY = v.h * (0.5 - m / 2);
+      charEntity.setAttribute("width", v.w || 1);
+      charEntity.setAttribute("height", v.h * (1 + m));
+      charEntity.setAttribute("src", v._credited.url);
+    }
 
     if (v.text) applyBubble(v.text);
     else {
@@ -1024,31 +1120,47 @@
     const myCaption = ++captionAnimId;
     const v = VARIANTS[currentVariant];
 
-    patchReveal();
+    if (v.model) {
+      // simple fade + rise -- the flat image's per-pixel wipe shader doesn't
+      // apply to an arbitrary multi-material 3D model
+      setModelOpacity(0);
+      animate({
+        duration: 1400,
+        easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+        onUpdate: (e) => {
+          if (myChar !== charAnimId) return;
+          setModelOpacity(e);
+          const y = restY - RISE * (1 - e);
+          modelEntity.setAttribute("position", `0 ${y} 0`);
+        },
+      });
+    } else {
+      patchReveal();
 
-    // character: rise from just below the marker while a soft edge slowly
-    // wipes the image in from the feet upward
-    revealU.value = 0;
-    animate({
-      duration: 2200,
-      easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
-      onUpdate: (e) => {
-        if (myChar !== charAnimId) return;
-        revealU.value = e;
-        // opacity is a no-op wash when the reveal shader is active, and a
-        // graceful fallback fade if for some reason it did not patch
-        charEntity.setAttribute("opacity", Math.min(1, e * 1.25));
-      },
-    });
-    animate({
-      duration: 1500,
-      easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
-      onUpdate: (e) => {
-        if (myChar !== charAnimId) return;
-        const y = restY - RISE * (1 - e); // rises up to standing height
-        charEntity.setAttribute("position", `0 ${y} 0`);
-      },
-    });
+      // character: rise from just below the marker while a soft edge slowly
+      // wipes the image in from the feet upward
+      revealU.value = 0;
+      animate({
+        duration: 2200,
+        easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
+        onUpdate: (e) => {
+          if (myChar !== charAnimId) return;
+          revealU.value = e;
+          // opacity is a no-op wash when the reveal shader is active, and a
+          // graceful fallback fade if for some reason it did not patch
+          charEntity.setAttribute("opacity", Math.min(1, e * 1.25));
+        },
+      });
+      animate({
+        duration: 1500,
+        easing: (t) => 1 - Math.pow(1 - t, 3), // easeOutCubic
+        onUpdate: (e) => {
+          if (myChar !== charAnimId) return;
+          const y = restY - RISE * (1 - e); // rises up to standing height
+          charEntity.setAttribute("position", `0 ${y} 0`);
+        },
+      });
+    }
 
     // sparkles around the character as it appears (skipped for `plain` variants)
     if (!v.plain) burstSparkles();
@@ -1094,9 +1206,15 @@
     charAnimId++;
     bubbleAnimId++;
     captionAnimId++;
-    revealU.value = 0;
-    charEntity.setAttribute("opacity", 0);
-    charEntity.setAttribute("position", `0 ${restY - RISE} 0`);
+    const v = VARIANTS[currentVariant];
+    if (v && v.model) {
+      setModelOpacity(0);
+      modelEntity.setAttribute("position", `0 ${restY - RISE} 0`);
+    } else {
+      revealU.value = 0;
+      charEntity.setAttribute("opacity", 0);
+      charEntity.setAttribute("position", `0 ${restY - RISE} 0`);
+    }
     bubbleWrap.setAttribute("visible", "false");
     bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
     captionWrap.setAttribute("visible", "false");
