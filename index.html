@@ -922,7 +922,9 @@
       plain: true,
       author: "ろき",
     },
-    { model: true },
+    // hidden: true -- keep this reachable via ?illust=6 for testing, but
+    // skip it in the normal ◀ ▶ rotation until it's ready to ship.
+    { model: true, hidden: true },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const CAPTION_W = 0.9; // world width of the plain-caption pill
@@ -1003,6 +1005,63 @@
   }
   if (modelEntity.getObject3D("mesh")) refreshModelFit();
   else modelEntity.addEventListener("model-loaded", refreshModelFit);
+
+  // Reveals the model bottom-to-top like the illustrations' own wipe, but
+  // via a clipping plane instead of an alpha wipe -- a wipe needs
+  // per-pixel alpha, which (like the opacity fade before it) reintroduces
+  // the transparent-sorting glitch that showed the eyes through the back
+  // of the head. A clip plane just doesn't draw the clipped triangles at
+  // all, so there's nothing to sort.
+  //
+  // "Bottom to top" means relative to how the model actually stands (real
+  // gravity when available, else world Y) -- not the mesh's own local Y,
+  // which sits under modelEntity's fixed forward-tilt rotation and so
+  // doesn't line up with the model's visible up/down once tilted.
+  const modelClipPlane = new THREE.Plane();
+  const modelClipBox = new THREE.Box3();
+  function setModelClipReveal(frac) {
+    const root = modelEntity.getObject3D("mesh");
+    if (!root) return;
+    if (frac >= 1) {
+      root.traverse((node) => {
+        if (node.isMesh && node.material) {
+          const mats = Array.isArray(node.material) ? node.material : [node.material];
+          for (const mat of mats) mat.clippingPlanes = null;
+        }
+      });
+      return;
+    }
+    // true = also refresh the ancestor chain (floatGroup, target, ...) first;
+    // safe here since this only ever runs after a marker's first detection,
+    // unlike the bounding-box walk above which has to tolerate the
+    // pre-detection degenerate matrix.
+    root.updateWorldMatrix(true, false);
+    modelClipBox.setFromObject(root);
+    const g = window.__worldUp;
+    const up = g && g.lengthSq() > 0.1 && Number.isFinite(g.x) ? g.clone().normalize() : new THREE.Vector3(0, 1, 0);
+    // project the (world-axis-aligned) box onto `up` to get the true
+    // min/max height along it, since `up` won't be exactly world Y whenever
+    // gravity is tilted relative to the device.
+    const minP =
+      (up.x >= 0 ? modelClipBox.min.x : modelClipBox.max.x) * up.x +
+      (up.y >= 0 ? modelClipBox.min.y : modelClipBox.max.y) * up.y +
+      (up.z >= 0 ? modelClipBox.min.z : modelClipBox.max.z) * up.z;
+    const maxP =
+      (up.x >= 0 ? modelClipBox.max.x : modelClipBox.min.x) * up.x +
+      (up.y >= 0 ? modelClipBox.max.y : modelClipBox.min.y) * up.y +
+      (up.z >= 0 ? modelClipBox.max.z : modelClipBox.min.z) * up.z;
+    const revealAt = THREE.MathUtils.lerp(minP, maxP, Math.max(0, frac));
+    modelClipPlane.normal.copy(up).negate();
+    modelClipPlane.constant = revealAt;
+    root.traverse((node) => {
+      if (node.isMesh && node.material) {
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        for (const mat of mats) mat.clippingPlanes = [modelClipPlane];
+      }
+    });
+  }
+  if (sceneEl.renderer) sceneEl.renderer.localClippingEnabled = true;
+  else sceneEl.addEventListener("renderstart", () => { sceneEl.renderer.localClippingEnabled = true; });
 
   function applyVariant(v) {
     if (v.model) {
@@ -1172,23 +1231,14 @@
     const v = VARIANTS[currentVariant];
 
     if (v.model) {
-      // A fade (animating material opacity) needs the material transparent
-      // and, to avoid ITS OWN sorting glitches mid-fade, depthWrite turned
-      // off until fully opaque -- but with depthWrite off, overlapping
-      // transparent surfaces within the model (e.g. an eye/face layer over
-      // the head) have no reliable draw order, which is what was showing
-      // the eyes "through" the back of the head. Grow the model in via
-      // scale instead: it's always fully opaque, using whatever
-      // depth-writing the model was authored with, so there's nothing to
-      // mis-sort.
-      modelEntity.setAttribute("scale", "0.001 0.001 0.001");
+      setModelClipReveal(0);
       // stand-on-ground's own smoothing (the up vector, then the slerp to
       // it) takes a beat to settle right after a marker is freshly found.
-      // Now that growing from scale (rather than fading opacity) means
-      // there's no more sorting glitch to hide, this only needs to catch
-      // the rare case of a still-unstable pose, not stand in the way of a
-      // snappy reveal -- so keep the settle check quick and let it match
-      // how immediately the flat illustrations appear.
+      // Now that the clip-plane reveal means there's no more sorting glitch
+      // to hide, this only needs to catch the rare case of a still-unstable
+      // pose, not stand in the way of a snappy reveal -- so keep the
+      // settle check quick and let it match how immediately the flat
+      // illustrations appear.
       const MODEL_SETTLE_HOLD_MS = 150;
       const MODEL_SETTLE_MAX_MS = 1200;
       const settleStart = performance.now();
@@ -1206,8 +1256,7 @@
           easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
           onUpdate: (e) => {
             if (myChar !== charAnimId) return;
-            const s = Math.max(0.001, modelFit.scale * e);
-            modelEntity.setAttribute("scale", `${s} ${s} ${s}`);
+            setModelClipReveal(e);
           },
         });
         animate({
@@ -1295,7 +1344,7 @@
     captionAnimId++;
     const v = VARIANTS[currentVariant];
     if (v && v.model) {
-      modelEntity.setAttribute("scale", "0.001 0.001 0.001");
+      setModelClipReveal(0);
       modelEntity.setAttribute("position", `0 ${restY - RISE} 0`);
     } else {
       revealU.value = 0;
@@ -1364,8 +1413,11 @@
 
   // ◀ ▶ : switch which illustration appears
   function switchVariant(dir) {
-    currentVariant =
-      (currentVariant + dir + VARIANTS.length) % VARIANTS.length;
+    let next = currentVariant;
+    do {
+      next = (next + dir + VARIANTS.length) % VARIANTS.length;
+    } while (VARIANTS[next].hidden && next !== currentVariant);
+    currentVariant = next;
     applyVariant(VARIANTS[currentVariant]);
     if (shownNow) showContent();
     else showToast(`イラスト ${currentVariant + 1} / ${VARIANTS.length}`);
