@@ -1004,20 +1004,6 @@
   if (modelEntity.getObject3D("mesh")) refreshModelFit();
   else modelEntity.addEventListener("model-loaded", refreshModelFit);
 
-  function setModelOpacity(opacity) {
-    const root = modelEntity.getObject3D("mesh");
-    if (!root) return;
-    root.traverse((node) => {
-      if (!node.isMesh || !node.material) return;
-      const mats = Array.isArray(node.material) ? node.material : [node.material];
-      for (const mat of mats) {
-        mat.transparent = true;
-        mat.opacity = opacity;
-        mat.depthWrite = opacity >= 0.999; // avoid transparency-sorting glitches mid-fade
-      }
-    });
-  }
-
   function applyVariant(v) {
     if (v.model) {
       charEntity.setAttribute("visible", "false");
@@ -1186,15 +1172,20 @@
     const v = VARIANTS[currentVariant];
 
     if (v.model) {
-      // same pacing as the illustrations (slow opacity fade + a separate,
-      // quicker rise) -- just a plain fade instead of the per-pixel wipe,
-      // since that shader doesn't apply to an arbitrary multi-material
-      // 3D model
-      setModelOpacity(0);
+      // A fade (animating material opacity) needs the material transparent
+      // and, to avoid ITS OWN sorting glitches mid-fade, depthWrite turned
+      // off until fully opaque -- but with depthWrite off, overlapping
+      // transparent surfaces within the model (e.g. an eye/face layer over
+      // the head) have no reliable draw order, which is what was showing
+      // the eyes "through" the back of the head. Grow the model in via
+      // scale instead: it's always fully opaque, using whatever
+      // depth-writing the model was authored with, so there's nothing to
+      // mis-sort.
+      modelEntity.setAttribute("scale", "0.001 0.001 0.001");
       // stand-on-ground's own smoothing (the up vector, then the slerp to
       // it) takes a beat to settle right after a marker is freshly found,
       // which briefly showed the wrong side while the model was already
-      // fading in. How long that beat actually lasts depends on the real
+      // revealing. How long that beat actually lasts depends on the real
       // device's tracking/gravity, not something we can guess a fixed
       // number for -- so wait for the component to report it's actually
       // stopped moving (with a cap, in case it never fully settles) instead
@@ -1217,7 +1208,8 @@
           easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
           onUpdate: (e) => {
             if (myChar !== charAnimId) return;
-            setModelOpacity(e);
+            const s = Math.max(0.001, modelFit.scale * e);
+            modelEntity.setAttribute("scale", `${s} ${s} ${s}`);
           },
         });
         animate({
@@ -1305,7 +1297,7 @@
     captionAnimId++;
     const v = VARIANTS[currentVariant];
     if (v && v.model) {
-      setModelOpacity(0);
+      modelEntity.setAttribute("scale", "0.001 0.001 0.001");
       modelEntity.setAttribute("position", `0 ${restY - RISE} 0`);
     } else {
       revealU.value = 0;
@@ -1497,6 +1489,10 @@
     let n = parseInt(params.get("illust"), 10);
     if (!Number.isFinite(n)) n = 1;
     currentVariant = Math.min(Math.max(n, 1), VARIANTS.length) - 1;
+    // lock the test URL to just this one variant -- otherwise it looked
+    // identical to the normal page once the ◀ ▶ buttons were used.
+    document.getElementById("prev-btn").style.display = "none";
+    document.getElementById("next-btn").style.display = "none";
   })();
 })();
 </script>
