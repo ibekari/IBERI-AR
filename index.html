@@ -964,7 +964,16 @@
   }
 
   function applyVariant(v) {
-    floatGroupEl.components["stand-on-ground"].billboard = !v.model;
+    const soc = floatGroupEl.components["stand-on-ground"];
+    const wantBillboard = !v.model;
+    if (soc.billboard !== wantBillboard) {
+      // switching how the group is oriented (camera-facing <-> marker-relative)
+      // would otherwise slerp from the old orientation, briefly showing the
+      // wrong side before catching up -- force an immediate re-snap instead.
+      soc._ready = false;
+      soc._fwd.set(0, 0, 0);
+    }
+    soc.billboard = wantBillboard;
 
     if (v.model) {
       charEntity.setAttribute("visible", "false");
