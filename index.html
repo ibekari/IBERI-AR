@@ -1183,16 +1183,14 @@
       // mis-sort.
       modelEntity.setAttribute("scale", "0.001 0.001 0.001");
       // stand-on-ground's own smoothing (the up vector, then the slerp to
-      // it) takes a beat to settle right after a marker is freshly found,
-      // which briefly showed the wrong side while the model was already
-      // revealing. How long that beat actually lasts depends on the real
-      // device's tracking/gravity, not something we can guess a fixed
-      // number for -- so wait for the component to report it's actually
-      // stopped moving (with a cap, in case it never fully settles) instead
-      // of a fixed delay. Nothing is visible yet, so the wait happens
-      // off-screen.
-      const MODEL_SETTLE_HOLD_MS = 1800;
-      const MODEL_SETTLE_MAX_MS = 6000;
+      // it) takes a beat to settle right after a marker is freshly found.
+      // Now that growing from scale (rather than fading opacity) means
+      // there's no more sorting glitch to hide, this only needs to catch
+      // the rare case of a still-unstable pose, not stand in the way of a
+      // snappy reveal -- so keep the settle check quick and let it match
+      // how immediately the flat illustrations appear.
+      const MODEL_SETTLE_HOLD_MS = 150;
+      const MODEL_SETTLE_MAX_MS = 1200;
       const settleStart = performance.now();
       const soc = floatGroupEl.components["stand-on-ground"];
       soc.resetSettle();
