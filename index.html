@@ -484,6 +484,10 @@
       this._pos = new THREE.Vector3();
       this._up = new THREE.Vector3();
       this._ready = false;
+      // how long the *target* orientation (this frame's fresh worldQ, before
+      // smoothing) has stayed close to what we're already showing -- used to
+      // tell a genuinely settled pose apart from one that's still catching up.
+      this._stableMs = 0;
     },
     tick: function (time, dt) {
       const obj = this.el.object3D;
@@ -582,9 +586,30 @@
           this._worldQ.copy(worldQ);
         }
         this._ready = true;
+        this._stableMs = 0;
       }
+      // Track how long the *fresh, unsmoothed* target has agreed with what
+      // we're already showing. A fixed settle delay can't know how long the
+      // real device's tracking/gravity actually takes to stop moving, so
+      // instead of guessing a duration, watch for it directly.
+      const angleDiffDeg = THREE.MathUtils.radToDeg(this._worldQ.angleTo(worldQ));
+      this._stableMs = angleDiffDeg < 2 ? this._stableMs + step * 1000 : 0;
+
       this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
+    },
+    // True once the orientation has stopped visibly changing for `holdMs`.
+    settled: function (holdMs) {
+      return this._ready && this._stableMs >= (holdMs || 300);
+    },
+    // Force the next settled() calls to wait fresh -- call whenever content
+    // is about to reappear (e.g. on targetFound), since _ready normally
+    // stays true across a lost/found cycle (only obj.visible would flip it,
+    // and floatGroup itself is never actually hidden) so the stability
+    // clock wouldn't otherwise restart just because tracking dropped out
+    // and picked back up.
+    resetSettle: function () {
+      this._stableMs = 0;
     },
   });
 </script>
@@ -1169,11 +1194,23 @@
       // stand-on-ground's own smoothing (the up vector, then the slerp to
       // it) takes a beat to settle right after a marker is freshly found,
       // which briefly showed the wrong side while the model was already
-      // fading in. Hold it invisible for that beat instead -- nothing is
-      // visible yet, so the settling happens off-screen.
-      const MODEL_SETTLE_MS = 900;
-      setTimeout(() => {
+      // fading in. How long that beat actually lasts depends on the real
+      // device's tracking/gravity, not something we can guess a fixed
+      // number for -- so wait for the component to report it's actually
+      // stopped moving (with a cap, in case it never fully settles) instead
+      // of a fixed delay. Nothing is visible yet, so the wait happens
+      // off-screen.
+      const MODEL_SETTLE_MAX_MS = 4000;
+      const settleStart = performance.now();
+      const soc = floatGroupEl.components["stand-on-ground"];
+      soc.resetSettle();
+      const waitForSettle = () => {
         if (myChar !== charAnimId) return;
+        const waited = performance.now() - settleStart;
+        if (!soc.settled(300) && waited < MODEL_SETTLE_MAX_MS) {
+          requestAnimationFrame(waitForSettle);
+          return;
+        }
         animate({
           duration: 2200,
           easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
@@ -1191,7 +1228,8 @@
             modelEntity.setAttribute("position", `0 ${y} 0`);
           },
         });
-      }, MODEL_SETTLE_MS);
+      };
+      waitForSettle();
     } else {
       patchReveal();
 
