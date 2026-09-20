@@ -354,11 +354,11 @@
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
         <!-- rotation: 180° on Y because the model's own "front" faces the
-             opposite way from the flat illustrations' convention; -90° on X
-             tilts the front all the way up toward the camera, since left at
-             0 it read as viewed from directly behind/above (position/scale
-             come from its bounding box, see script). -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="-90 180 0" visible="false"></a-entity>
+             opposite way from the flat illustrations' convention; 90° on X
+             tilts the front up toward the camera (previously -90, which put
+             it upside down) (position/scale come from its bounding box, see
+             script). -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="90 180 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
