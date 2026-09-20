@@ -353,7 +353,10 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <a-entity id="modelEntity" gltf-model="#model010" visible="false"></a-entity>
+        <!-- rotation: the model's own "front" faces the opposite way from
+             the flat illustrations' convention, so it's turned 180° here
+             (position/scale are set from its bounding box in the script). -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="0 180 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
