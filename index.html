@@ -362,9 +362,9 @@
              of showing its back. X is overwritten every frame by
              stand-on-ground (dynamic front-tilt, based on the camera's
              actual elevation over the marker) -- -50 here is just the
-             fallback shown before tracking starts. 5° on Z corrects a
-             diagonal-looking lean (roll, around the camera-facing axis). -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="-50 180 5" visible="false"></a-entity>
+             fallback shown before tracking starts. 10° on Z rolls it
+             further right, around the camera-facing axis. -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="-50 180 10" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
