@@ -359,10 +359,11 @@
              printed orientation, not the camera -- so which way that ends
              up pointing relative to the viewer depends on the physical
              marker, and here it needed a 180° flip to face front instead
-             of showing its back. -50° on X tilts the front up toward the
-             camera, since standing bolt upright read as viewed from above.
-             5° on Z corrects a diagonal-looking lean (roll, around the
-             camera-facing axis). -->
+             of showing its back. X is overwritten every frame by
+             stand-on-ground (dynamic front-tilt, based on the camera's
+             actual elevation over the marker) -- -50 here is just the
+             fallback shown before tracking starts. 5° on Z corrects a
+             diagonal-looking lean (roll, around the camera-facing axis). -->
         <a-entity id="modelEntity" gltf-model="#model010" rotation="-50 180 5" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
@@ -608,6 +609,25 @@
 
       this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
+
+      // ---- 5. dynamic front-tilt for the 3D model ----
+      // In "stand upright" mode the model doesn't turn to face the camera,
+      // so a fixed forward-tilt (baked into modelEntity's own rotation)
+      // only reads right at the one camera angle it was tuned for -- tilt
+      // toward the camera more as the camera gets higher above the marker,
+      // less as it comes down closer to level, so the face/head stays in
+      // view across a range of camera angles instead of just one.
+      if (!this.billboard) {
+        if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
+        if (this._modelEntity && this._modelEntity.object3D.visible) {
+          const toCam = camWorld.clone().sub(this._pos);
+          const cUp = toCam.dot(up);
+          const cHoriz = toCam.clone().addScaledVector(up, -cUp).length();
+          const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
+          const tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.65, 0, 50);
+          this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
+        }
+      }
     },
     // True once the orientation has stopped visibly changing for `holdMs`.
     settled: function (holdMs) {
