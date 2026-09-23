@@ -616,11 +616,7 @@
       // only reads right at the one camera angle it was tuned for -- tilt
       // toward the camera more as the camera gets higher above the marker,
       // less as it comes down closer to level, so the face/head stays in
-      // view across a range of camera angles instead of just one. Only
-      // partially compensates (0.3, not 1.0) -- fully cancelling the
-      // elevation change made tilting the camera barely change how the
-      // model looked at all; this keeps some of that natural variation
-      // while still pulling the face back into view at steep angles.
+      // view across a range of camera angles instead of just one.
       if (!this.billboard) {
         if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
         if (this._modelEntity && this._modelEntity.object3D.visible) {
@@ -628,7 +624,7 @@
           const cUp = toCam.dot(up);
           const cHoriz = toCam.clone().addScaledVector(up, -cUp).length();
           const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
-          const tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.3, 0, 50);
+          const tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.65, 0, 50);
           this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
         }
       }
