@@ -353,14 +353,14 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <!-- rotation: no adjustment needed -- verified by loading the file
-             raw (identity rotation) into an isolated three.js scene and
-             rendering it from a fixed +Z camera at several elevations
-             (0-70°): this file already stands upright (+Y) facing the
-             camera (+Z) at every angle. (An earlier version of this file
-             needed a baked correction here; if 010.glb is ever replaced
-             again, redo that check before assuming 0 still holds.) -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="0 0 0" visible="false"></a-entity>
+        <!-- rotation: 180° on Y. The file's own rest pose faces +Z (checked
+             by rendering it raw from a fixed +Z camera), but in "stand
+             upright" mode the group's forward comes from the marker's own
+             printed orientation, not the camera -- so which way that ends
+             up pointing relative to the viewer depends on the physical
+             marker, and here it needed a 180° flip to face front instead
+             of showing its back. -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="0 180 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
