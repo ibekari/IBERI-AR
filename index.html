@@ -353,17 +353,14 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <!-- rotation: loaded raw (identity) into an isolated three.js scene
-             and rendered from a fixed +Z camera, this model already stands
-             upright (+Y) facing the camera (+Z) -- no Y flip needed at all,
-             unlike the flat illustrations. The earlier "180 on Y" was wrong;
-             combined with any X tilt it flips the model to show its back,
-             which is what caused the repeated back-facing/upside-down
-             reports. -45° on X tilts the front up toward the camera, which
-             a render sweep from 0-80° camera elevation confirmed stays
-             front-facing and upright throughout (position/scale come from
-             its bounding box, see script). -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="-45 0 0" visible="false"></a-entity>
+        <!-- rotation: no adjustment needed -- verified by loading the file
+             raw (identity rotation) into an isolated three.js scene and
+             rendering it from a fixed +Z camera at several elevations
+             (0-70°): this file already stands upright (+Y) facing the
+             camera (+Z) at every angle. (An earlier version of this file
+             needed a baked correction here; if 010.glb is ever replaced
+             again, redo that check before assuming 0 still holds.) -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="0 0 0" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
@@ -470,12 +467,7 @@
    *   - rotation  : slerp toward the target (~0.4 s), so tracking tremor is
    *                 low-pass filtered instead of shown frame by frame.
    * The marker's own rotation noise cancels out: the entity's *world*
-   * orientation is rebuilt each frame from stable vectors. Everything --
-   * including the .glb model -- always faces the camera this way: standing
-   * it upright using the marker's own printed rotation instead was tried for
-   * the model, but that rotation estimate is unreliable right after a marker
-   * is first found (see the "settle" comment below), so it could briefly
-   * show the wrong side.
+   * orientation is rebuilt each frame from stable vectors.
    */
   AFRAME.registerComponent("stand-on-ground", {
     init: function () {
@@ -484,6 +476,12 @@
       this._pos = new THREE.Vector3();
       this._up = new THREE.Vector3();
       this._ready = false;
+      // false = stand upright using the marker's own printed orientation,
+      // turning with the physical card but never with the viewer -- set
+      // per-variant by applyVariant() (the .glb model wants this; the flat
+      // illustrations look the same from any angle so they just always
+      // face the camera).
+      this.billboard = true;
       // how long the *target* orientation (this frame's fresh worldQ, before
       // smoothing) has stayed close to what we're already showing -- used to
       // tell a genuinely settled pose apart from one that's still catching up.
@@ -540,16 +538,26 @@
       const up = this._up.clone().normalize();
 
       // ---- 3. forward direction ----
-      // slow follow of the horizontal direction to the camera
-      const toCam = camWorld.clone().sub(this._pos);
-      toCam.addScaledVector(up, -toCam.dot(up));
-      if (toCam.lengthSq() > 0.03) {
-        toCam.normalize();
-        if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
-        else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
-      } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
-        // camera almost overhead at first sight: use the card's printed "up" edge
-        this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
+      if (this.billboard) {
+        // slow follow of the horizontal direction to the camera
+        const toCam = camWorld.clone().sub(this._pos);
+        toCam.addScaledVector(up, -toCam.dot(up));
+        if (toCam.lengthSq() > 0.03) {
+          toCam.normalize();
+          if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(toCam);
+          else this._fwd.lerp(toCam, 1 - Math.exp(-step / 0.6));
+        } else if (!this._ready || this._fwd.lengthSq() < 1e-6) {
+          // camera almost overhead at first sight: use the card's printed "up" edge
+          this._fwd.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ));
+        }
+      } else {
+        // stand upright: the marker's own printed "up" edge. Just like
+        // markerUp above, this estimate is noisiest right after a marker is
+        // first found -- smooth it the same way instead of snapping to it
+        // frame by frame, so a transient bad reading doesn't flash through.
+        const fwdRaw = new THREE.Vector3(0, 1, 0).applyQuaternion(parentQ);
+        if (!this._ready || this._fwd.lengthSq() < 1e-6) this._fwd.copy(fwdRaw);
+        else this._fwd.lerp(fwdRaw, 1 - Math.exp(-step / 0.3));
       }
       this._fwd.addScaledVector(up, -this._fwd.dot(up));
       if (this._fwd.lengthSq() < 1e-6) return;
@@ -895,8 +903,10 @@
   // `author`  -> credit name baked onto the bottom-centre of the image itself.
   // `plain: true` -> no sparkle burst.
   // `model: true` -> a .glb (see modelEntity) instead of a flat illustration.
-  //              Faces the camera the same as everything else and is scaled/
-  //              positioned automatically from its own bounding box.
+  //              Stands upright with the marker's own printed orientation
+  //              (see stand-on-ground's `billboard` toggle) instead of
+  //              turning to face the camera, and is scaled/positioned
+  //              automatically from its own bounding box.
   const VARIANTS = [
     { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜", author: "ぶんぶん" },
     {
@@ -1007,6 +1017,7 @@
   else modelEntity.addEventListener("model-loaded", refreshModelFit);
 
   function applyVariant(v) {
+    floatGroupEl.components["stand-on-ground"].billboard = !v.model;
     if (v.model) {
       charEntity.setAttribute("visible", "false");
       modelEntity.setAttribute("visible", "true");
