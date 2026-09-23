@@ -1103,6 +1103,44 @@
   if (sceneEl.hasLoaded) patchReveal();
   else sceneEl.addEventListener("loaded", patchReveal);
 
+  // ---------- .glb model fade-in ----------
+  // A plain opacity fade needs the material transparent and, to avoid its
+  // own sorting glitches mid-fade, depthWrite turned off until fully
+  // opaque -- but with depthWrite off, overlapping surfaces within the
+  // model (face/hair/eyes etc.) have no reliable draw order, which showed
+  // up as flickering, melting-looking overlap ("燃え上がるように見える").
+  // A dithered discard sidesteps that entirely: every rendered pixel is
+  // still fully opaque (so normal depth testing/sorting just works), only
+  // more of them get skipped early on -- reading as a natural dissolve-in
+  // rather than a blend.
+  const modelRevealU = { value: 0 };
+  function patchModelReveal() {
+    const root = modelEntity.getObject3D("mesh");
+    if (!root) return;
+    root.traverse((node) => {
+      if (!node.isMesh || !node.material) return;
+      const mats = Array.isArray(node.material) ? node.material : [node.material];
+      for (const mat of mats) {
+        if (mat.userData.modelRevealed) continue;
+        mat.userData.modelRevealed = true;
+        mat.onBeforeCompile = (shader) => {
+          shader.uniforms.uModelReveal = modelRevealU;
+          shader.fragmentShader =
+            "uniform float uModelReveal;\n" +
+            shader.fragmentShader.replace(
+              "#include <dithering_fragment>",
+              "#include <dithering_fragment>\n" +
+                "  float _n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);\n" +
+                "  if (_n > uModelReveal) discard;\n"
+            );
+        };
+        mat.needsUpdate = true;
+      }
+    });
+  }
+  modelEntity.addEventListener("model-loaded", patchModelReveal);
+  if (modelEntity.getObject3D("mesh")) patchModelReveal();
+
   // ---------- sparkle burst ----------
   const sparkleRoot = document.querySelector("#sparkles");
   const SPARKLE_TEX = buildSparkleTexture();
@@ -1186,20 +1224,15 @@
     const v = VARIANTS[currentVariant];
 
     if (v.model) {
-      // pop the model in via scale -- a fade (opacity) needs depthWrite
-      // turned off mid-transition, which leaves overlapping transparent
-      // surfaces within the model (e.g. an eye/face layer over the head)
-      // with no reliable draw order and showed the eyes "through" the back
-      // of the head. Scale keeps materials fully opaque throughout, so
-      // there's nothing to mis-sort.
-      modelEntity.setAttribute("scale", "0.001 0.001 0.001");
+      modelRevealU.value = 0;
       // stand-on-ground's own smoothing (the up vector, then the slerp to
       // it) takes a beat to settle right after a marker is freshly found.
-      // Now that growing from scale (rather than fading opacity) means
-      // there's no more sorting glitch to hide, this only needs to catch
-      // the rare case of a still-unstable pose, not stand in the way of a
-      // snappy reveal -- so keep the settle check quick and let it match
-      // how immediately the flat illustrations appear.
+      // Since the dither reveal below never shows a wrong-looking
+      // in-between state (each visible pixel is always fully opaque, at
+      // its correct final position), this only needs to catch the rare
+      // case of a still-unstable pose, not stand in the way of a snappy
+      // reveal -- so keep the settle check quick and let it match how
+      // immediately the flat illustrations appear.
       const MODEL_SETTLE_HOLD_MS = 150;
       const MODEL_SETTLE_MAX_MS = 1200;
       const settleStart = performance.now();
@@ -1217,8 +1250,7 @@
           easing: (t) => -(Math.cos(Math.PI * t) - 1) / 2, // easeInOutSine
           onUpdate: (e) => {
             if (myChar !== charAnimId) return;
-            const s = Math.max(0.001, modelFit.scale * e);
-            modelEntity.setAttribute("scale", `${s} ${s} ${s}`);
+            modelRevealU.value = e;
           },
         });
         animate({
@@ -1306,7 +1338,7 @@
     captionAnimId++;
     const v = VARIANTS[currentVariant];
     if (v && v.model) {
-      modelEntity.setAttribute("scale", "0.001 0.001 0.001");
+      modelRevealU.value = 0;
       modelEntity.setAttribute("position", `0 ${restY - RISE} 0`);
     } else {
       revealU.value = 0;
