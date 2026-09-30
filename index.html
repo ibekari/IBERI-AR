@@ -616,7 +616,11 @@
       // only reads right at the one camera angle it was tuned for -- tilt
       // toward the camera more as the camera gets higher above the marker,
       // less as it comes down closer to level, so the face/head stays in
-      // view across a range of camera angles instead of just one.
+      // view across a range of camera angles instead of just one. A floor
+      // (30°) keeps it from reading as looking down even at a shallow
+      // elevation; a wide range up to the ceiling (70°) and a strong slope
+      // (0.7) keep tilting the camera visibly changing how the model looks,
+      // rather than mostly cancelling that change out.
       if (!this.billboard) {
         if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
         if (this._modelEntity && this._modelEntity.object3D.visible) {
@@ -624,7 +628,7 @@
           const cUp = toCam.dot(up);
           const cHoriz = toCam.clone().addScaledVector(up, -cUp).length();
           const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
-          const tiltDeg = THREE.MathUtils.clamp(elevationDeg * 0.65, 0, 50);
+          const tiltDeg = THREE.MathUtils.clamp(30 + elevationDeg * 0.7, 30, 70);
           this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
         }
       }
