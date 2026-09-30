@@ -947,11 +947,20 @@
     // 004_ろき.png
     { img: "#charImg4", w: 0.81, h: 1.15, plain: true, author: "ろき" },
     // 005_ori.png
-    { img: "#charImg5", w: 0.92, h: 1.15, plain: true, author: "ori" },
+    // hidden: true on 005-013 below -- not public yet, planned for 10/11;
+    // still reachable via ?illust=N for testing until then.
+    { img: "#charImg5", w: 0.92, h: 1.15, plain: true, author: "ori", hidden: true },
     // 006_笹かま.png
-    { img: "#charImg6", w: 1, h: 0.949, text: "いたずらすんで～！", author: "笹かま" },
+    {
+      img: "#charImg6",
+      w: 1,
+      h: 0.949,
+      text: "いたずらすんで～！",
+      author: "笹かま",
+      hidden: true,
+    },
     // 007_ぽすと.png
-    { img: "#charImg7", w: 1, h: 1, text: "ちべりぁっ！", author: "ぽすと" },
+    { img: "#charImg7", w: 1, h: 1, text: "ちべりぁっ！", author: "ぽすと", hidden: true },
     // 008_カエル.png
     {
       img: "#charImg8",
@@ -960,19 +969,26 @@
       plain: true,
       title: "変わらぬ青に",
       author: "カエル",
+      hidden: true,
     },
     // 009_みそるあまど.png
-    { img: "#charImg9", w: 0.77, h: 1.15, plain: true, author: "みそるあまど" },
+    { img: "#charImg9", w: 0.77, h: 1.15, plain: true, author: "みそるあまど", hidden: true },
     // 010_Mk².png
-    { img: "#charImg10", w: 1, h: 0.818, plain: true, author: "Mk²" },
-    // 011_めんだこ.glb -- hidden: true keeps this reachable via ?illust=11
-    // for testing, but skips it in the normal ◀ ▶ rotation until it's
-    // ready to ship.
+    { img: "#charImg10", w: 1, h: 0.818, plain: true, author: "Mk²", hidden: true },
+    // 011_めんだこ.glb -- still reachable via ?illust=11 for testing, but
+    // skipped in the normal ◀ ▶ rotation until it's ready to ship.
     { model: true, hidden: true, author: "めんだこ" },
     // 012_トマト味のイワシ.png
-    { img: "#charImg11", w: 0.575, h: 1.15, plain: true, author: "トマト味のイワシ" },
+    {
+      img: "#charImg11",
+      w: 0.575,
+      h: 1.15,
+      plain: true,
+      author: "トマト味のイワシ",
+      hidden: true,
+    },
     // 013_なっつ.png
-    { img: "#charImg12", w: 1, h: 1, plain: true, author: "なっつ" },
+    { img: "#charImg12", w: 1, h: 1, plain: true, author: "なっつ", hidden: true },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const CAPTION_W = 0.9; // world width of the plain-caption pill
