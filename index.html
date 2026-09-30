@@ -353,18 +353,24 @@
 
         <!-- .glb model (VARIANTS entries with `model: true`). Scale/position
              are computed from its bounding box once loaded -- see the script. -->
-        <!-- rotation: 180° on Y. The file's own rest pose faces +Z (checked
-             by rendering it raw from a fixed +Z camera), but in "stand
+        <!-- rotation: fixed, not touched by JS -- the whole point of "stand
+             upright" mode is that the model stays put relative to the
+             marker and never reorients itself as the camera moves, so you
+             can walk/tilt around it like a real object and see it from
+             different angles through ordinary perspective rather than the
+             model itself rotating to compensate. (A version of this that
+             dynamically re-tilted with camera elevation was tried and
+             reverted -- it made the model visibly tilt whenever the camera
+             tilted, which read as "wrong" rather than "a real object".)
+             180° on Y: the file's own rest pose faces +Z (checked by
+             rendering it raw from a fixed +Z camera), but in "stand
              upright" mode the group's forward comes from the marker's own
              printed orientation, not the camera -- so which way that ends
              up pointing relative to the viewer depends on the physical
              marker, and here it needed a 180° flip to face front instead
-             of showing its back. X is overwritten every frame by
-             stand-on-ground (dynamic front-tilt, based on the camera's
-             actual elevation over the marker) -- -50 here is just the
-             fallback shown before tracking starts. 10° on Z rolls it
-             further right, around the camera-facing axis. -->
-        <a-entity id="modelEntity" gltf-model="#model010" rotation="-50 180 10" visible="false"></a-entity>
+             of showing its back. -50° on X tilts the front up toward the
+             camera. 15° on Z rolls it right, around the camera-facing axis. -->
+        <a-entity id="modelEntity" gltf-model="#model010" rotation="-50 180 15" visible="false"></a-entity>
 
         <!-- sparkle burst layer (sprites created by the script) -->
         <a-entity id="sparkles"></a-entity>
@@ -609,29 +615,6 @@
 
       this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
-
-      // ---- 5. dynamic front-tilt for the 3D model ----
-      // In "stand upright" mode the model doesn't turn to face the camera,
-      // so a fixed forward-tilt (baked into modelEntity's own rotation)
-      // only reads right at the one camera angle it was tuned for -- tilt
-      // toward the camera more as the camera gets higher above the marker,
-      // less as it comes down closer to level, so the face/head stays in
-      // view across a range of camera angles instead of just one. A floor
-      // (30°) keeps it from reading as looking down even at a shallow
-      // elevation; a wide range up to the ceiling (70°) and a strong slope
-      // (0.7) keep tilting the camera visibly changing how the model looks,
-      // rather than mostly cancelling that change out.
-      if (!this.billboard) {
-        if (!this._modelEntity) this._modelEntity = document.querySelector("#modelEntity");
-        if (this._modelEntity && this._modelEntity.object3D.visible) {
-          const toCam = camWorld.clone().sub(this._pos);
-          const cUp = toCam.dot(up);
-          const cHoriz = toCam.clone().addScaledVector(up, -cUp).length();
-          const elevationDeg = THREE.MathUtils.radToDeg(Math.atan2(cUp, cHoriz));
-          const tiltDeg = THREE.MathUtils.clamp(30 + elevationDeg * 0.7, 30, 70);
-          this._modelEntity.object3D.rotation.x = THREE.MathUtils.degToRad(-tiltDeg);
-        }
-      }
     },
     // True once the orientation has stopped visibly changing for `holdMs`.
     settled: function (holdMs) {
