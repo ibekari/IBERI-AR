@@ -13,14 +13,14 @@
 <meta property="og:locale" content="ja_JP" />
 <meta property="og:title" content="IBERI-AR" />
 <meta property="og:description" content="『俺らの大事なイベリバ』発行記念！カメラをマーカーにかざしてみてな！" />
-<meta property="og:image" content="https://ibekari.github.io/IBERI-AR/assets/001.png" />
+<meta property="og:image" content="https://ibekari.github.io/IBERI-AR/assets/001_%E3%81%B6%E3%82%93%E3%81%B6%E3%82%93.png" />
 <meta property="og:image:width" content="1280" />
 <meta property="og:image:height" content="1142" />
 
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="IBERI-AR" />
 <meta name="twitter:description" content="『俺らの大事なイベリバ』発行記念！カメラをマーカーにかざしてみてな！" />
-<meta name="twitter:image" content="https://ibekari.github.io/IBERI-AR/assets/001.png" />
+<meta name="twitter:image" content="https://ibekari.github.io/IBERI-AR/assets/001_%E3%81%B6%E3%82%93%E3%81%B6%E3%82%93.png" />
 <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
@@ -273,7 +273,7 @@
 <body>
 
   <div id="start-overlay">
-    <img src="./assets/001.png" alt="キャラクター" />
+    <img src="./assets/001_ぶんぶん.png" alt="キャラクター" />
     <p class="subtitle">『俺らの大事なイベリバ』発行記念</p>
     <h1>IBERI-AR</h1>
     <p class="lead">
@@ -321,12 +321,19 @@
     embedded
   >
     <a-assets>
-      <img id="charImg" src="./assets/001.png" crossorigin="anonymous" />
-      <img id="charImg2" src="./assets/002.png" crossorigin="anonymous" />
-      <img id="charImg3" src="./assets/003.jpg" crossorigin="anonymous" />
-      <img id="charImg4" src="./assets/004.jpg" crossorigin="anonymous" />
-      <img id="charImg5" src="./assets/005.png" crossorigin="anonymous" />
-      <a-asset-item id="model010" src="./assets/010.glb"></a-asset-item>
+      <img id="charImg1" src="./assets/001_ぶんぶん.png" crossorigin="anonymous" />
+      <img id="charImg2" src="./assets/002_ぶんぶん.jpg" crossorigin="anonymous" />
+      <img id="charImg3" src="./assets/003_ぶんぶん.png" crossorigin="anonymous" />
+      <img id="charImg4" src="./assets/004_ろき.png" crossorigin="anonymous" />
+      <img id="charImg5" src="./assets/005_ori.png" crossorigin="anonymous" />
+      <img id="charImg6" src="./assets/006_笹かま.png" crossorigin="anonymous" />
+      <img id="charImg7" src="./assets/007_ぽすと.png" crossorigin="anonymous" />
+      <img id="charImg8" src="./assets/008_カエル.png" crossorigin="anonymous" />
+      <img id="charImg9" src="./assets/009_みそるあまど.png" crossorigin="anonymous" />
+      <img id="charImg10" src="./assets/010_Mk².png" crossorigin="anonymous" />
+      <img id="charImg11" src="./assets/012_トマト味のイワシ.png" crossorigin="anonymous" />
+      <img id="charImg12" src="./assets/013_なっつ.png" crossorigin="anonymous" />
+      <a-asset-item id="model010" src="./assets/011_めんだこ.glb"></a-asset-item>
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false" cursor="fuse: false"></a-camera>
@@ -342,7 +349,7 @@
              pivot is the image centre, so restY in the script lifts the feet to the marker. -->
         <a-image
           id="charEntity"
-          src="#charImg"
+          src="#charImg1"
           width="1"
           height="0.892"
           position="0 0.18 0"
@@ -908,11 +915,15 @@
   const captionWrap = document.querySelector("#caption");
   const captionImg = document.querySelector("#captionImg");
 
-  // What can pop up above the marker. `w` / `h` are the plane size in metres
-  // (h/w matches the source image so the feet/bottom sit on the marker).
+  // What can pop up above the marker, in file-number order (001, 002, ...;
+  // the author's name is whatever follows "NNN_" in that file's name).
+  // `w` / `h` are the plane size in metres (h/w matches the source image so
+  // the feet/bottom sit on the marker).
   // `text`    -> speech bubble above the character with this (line-breakable) text.
   // `caption` -> no speech bubble; instead a small plain caption strip near
   //              the bottom of the illustration.
+  // `title`   -> same plain strip as `caption`, but as a heading above the
+  //              art instead of below it.
   // `author`  -> credit name baked onto the bottom-centre of the image itself.
   // `plain: true` -> no sparkle burst.
   // `model: true` -> a .glb (see modelEntity) instead of a flat illustration.
@@ -921,33 +932,53 @@
   //              turning to face the camera, and is scaled/positioned
   //              automatically from its own bounding box.
   const VARIANTS = [
-    { img: "#charImg", w: 1, h: 0.892, text: "ありがとな〜", author: "ぶんぶん" },
+    // 001_ぶんぶん.png
+    { img: "#charImg1", w: 1, h: 0.892, text: "ありがとな～！", author: "ぶんぶん" },
+    // 002_ぶんぶん.jpg
     {
       img: "#charImg2",
-      w: 1,
-      h: 0.907,
+      w: 0.82,
+      h: 1.15,
       text: "自分の絵に、\n好きな台詞を入れられるで！",
       author: "ぶんぶん",
     },
+    // 003_ぶんぶん.png
     {
       img: "#charImg3",
-      w: 0.8,
-      h: 0.8 * (2048 / 1460),
-      plain: true,
-      caption: "※吹き出しを表示しないこともできます",
+      w: 1,
+      h: 0.907,
+      text: "みんなの作品、\n楽しんでな！",
       author: "ぶんぶん",
     },
-    { img: "#charImg4", w: 0.8, h: 0.8 * (2798 / 2000), plain: true, author: "ぶんぶん" },
+    // 004_ろき.png
+    { img: "#charImg4", w: 0.81, h: 1.15, plain: true, author: "ろき" },
+    // 005_ori.png
+    { img: "#charImg5", w: 0.92, h: 1.15, plain: true, author: "ori" },
+    // 006_笹かま.png
+    { img: "#charImg6", w: 1, h: 0.949, text: "いたずらすんで～！", author: "笹かま" },
+    // 007_ぽすと.png
+    { img: "#charImg7", w: 1, h: 1, text: "ちべりぁっ！", author: "ぽすと" },
+    // 008_カエル.png
     {
-      img: "#charImg5",
-      w: 0.82,
-      h: 0.82 * (2000 / 1413),
+      img: "#charImg8",
+      w: 0.81,
+      h: 1.15,
       plain: true,
-      author: "ろき",
+      title: "変わらぬ青に",
+      author: "カエル",
     },
-    // hidden: true -- keep this reachable via ?illust=6 for testing, but
-    // skip it in the normal ◀ ▶ rotation until it's ready to ship.
-    { model: true, hidden: true },
+    // 009_みそるあまど.png
+    { img: "#charImg9", w: 0.77, h: 1.15, plain: true, author: "みそるあまど" },
+    // 010_Mk².png
+    { img: "#charImg10", w: 1, h: 0.818, plain: true, author: "Mk²" },
+    // 011_めんだこ.glb -- hidden: true keeps this reachable via ?illust=11
+    // for testing, but skips it in the normal ◀ ▶ rotation until it's
+    // ready to ship.
+    { model: true, hidden: true, author: "めんだこ" },
+    // 012_トマト味のイワシ.png
+    { img: "#charImg11", w: 0.575, h: 1.15, plain: true, author: "トマト味のイワシ" },
+    // 013_なっつ.png
+    { img: "#charImg12", w: 1, h: 1, plain: true, author: "なっつ" },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const CAPTION_W = 0.9; // world width of the plain-caption pill
@@ -974,12 +1005,18 @@
     bubbleWrap.setAttribute("position", `0.12 ${(0.99 + h / 2).toFixed(3)} 0.02`);
   }
 
-  function applyCaption(text) {
+  function applyCaption(text, atTop) {
     const { url, aspect } = buildCaptionTexture(text);
     const h = CAPTION_W / aspect;
     captionImg.setAttribute("width", CAPTION_W);
     captionImg.setAttribute("height", h);
     captionImg.setAttribute("src", url);
+    // `title` variants want this same plain strip, but as a heading above
+    // the art instead of a caption below it.
+    captionWrap.setAttribute(
+      "position",
+      atTop ? `0 ${(contentHeight + 0.08 + h / 2).toFixed(3)} 0.02` : "0 0.09 0.02"
+    );
   }
 
   // ---------- .glb model fit + fade helpers ----------
@@ -1066,7 +1103,8 @@
       bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
     }
 
-    if (v.caption) applyCaption(v.caption);
+    if (v.caption) applyCaption(v.caption, false);
+    else if (v.title) applyCaption(v.title, true);
     else {
       captionWrap.setAttribute("visible", "false");
       captionWrap.setAttribute("scale", "0.001 0.001 0.001");
@@ -1325,8 +1363,8 @@
       bubbleWrap.setAttribute("visible", "false");
     }
 
-    // plain caption: pop in near the bottom of the illustration
-    if (v.caption) {
+    // plain caption/title: pop in near the bottom (caption) or top (title)
+    if (v.caption || v.title) {
       captionWrap.setAttribute("visible", "true");
       captionWrap.setAttribute("scale", "0.001 0.001 0.001");
       setTimeout(() => {
