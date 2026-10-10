@@ -395,6 +395,12 @@
         <a-entity id="caption" position="0 0.09 0.02" scale="0.001 0.001 0.001" visible="false">
           <a-image id="captionImg" width="0.7" height="0.12" transparent="true" material="alphaTest: 0.05; side: double"></a-image>
         </a-entity>
+
+        <!-- author credit under the .glb model (flat illustrations bake theirs
+             into their own texture instead); always turns to face the camera -->
+        <a-entity id="credit" face-camera position="0 -0.11 0" scale="0.001 0.001 0.001" visible="false">
+          <a-image id="creditImg" width="0.4" height="0.08" transparent="true" material="alphaTest: 0.05; side: double"></a-image>
+        </a-entity>
       </a-entity>
     </a-entity>
   </a-scene>
@@ -651,6 +657,25 @@
       this._stableMs = 0;
     },
   });
+
+  // Keeps a child entity facing the camera, whatever way its parent
+  // (stand-on-ground's group) is turned -- used for the .glb model's credit
+  // badge, which sits in a group that deliberately does not follow the viewer.
+  AFRAME.registerComponent("face-camera", {
+    init: function () {
+      this._camQ = new THREE.Quaternion();
+      this._parentQ = new THREE.Quaternion();
+    },
+    tick: function () {
+      const obj = this.el.object3D;
+      const cam = this.el.sceneEl && this.el.sceneEl.camera;
+      if (!cam || !obj.parent) return;
+      cam.getWorldQuaternion(this._camQ);
+      obj.parent.getWorldQuaternion(this._parentQ);
+      if (!this._camQ.toArray().every(Number.isFinite) || !this._parentQ.toArray().every(Number.isFinite)) return;
+      obj.quaternion.copy(this._parentQ).invert().multiply(this._camQ);
+    },
+  });
 </script>
 <script>
 (function () {
@@ -860,6 +885,42 @@
     return { url: canvas.toDataURL("image/png"), marginFrac: marginPx / H };
   }
 
+  // Same look as the badge above, but as a standalone texture -- for the .glb
+  // model, which has no flat image to bake it into.
+  function buildBadgeTexture(name) {
+    const fontPx = 64;
+    const canvas = document.createElement("canvas");
+    let ctx = canvas.getContext("2d");
+    ctx.font = `${fontPx}px ${BUBBLE_FONT}`;
+    const label = String(name);
+    const padX = fontPx * 0.85;
+    const padY = fontPx * 0.5;
+    const boxW = Math.ceil(ctx.measureText(label).width + padX * 2);
+    const boxH = Math.ceil(fontPx + padY * 2);
+
+    canvas.width = boxW;
+    canvas.height = boxH;
+    ctx = canvas.getContext("2d"); // resizing reset the context state
+    const r = boxH / 2;
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.arcTo(boxW, 0, boxW, boxH, r);
+    ctx.arcTo(boxW, boxH, 0, boxH, r);
+    ctx.arcTo(0, boxH, 0, 0, r);
+    ctx.arcTo(0, 0, boxW, 0, r);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(20, 14, 10, 0.6)";
+    ctx.fill();
+
+    ctx.fillStyle = "#fff";
+    ctx.font = `${fontPx}px ${BUBBLE_FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, boxW / 2, boxH / 2 + fontPx * 0.03);
+
+    return { url: canvas.toDataURL("image/png"), aspect: boxW / boxH };
+  }
+
   // ---------- 2. animation helper (ease-out-back "pop") ----------
   function easeOutBack(t) {
     const c1 = 1.70158, c3 = c1 + 1;
@@ -925,6 +986,8 @@
   const bubbleImg = document.querySelector("#bubbleImg");
   const captionWrap = document.querySelector("#caption");
   const captionImg = document.querySelector("#captionImg");
+  const creditWrap = document.querySelector("#credit");
+  const creditImg = document.querySelector("#creditImg");
 
   // What can pop up above the marker, in file-number order (001, 002, ...;
   // the author's name is whatever follows "NNN_" in that file's name).
@@ -1099,7 +1162,15 @@
       restY = modelFit.restY;
       modelEntity.setAttribute("position", `0 ${restY} 0`);
       contentHeight = MODEL_TARGET_HEIGHT; // for the sparkle spread below
+
+      if (!v._badge) v._badge = buildBadgeTexture(v.author);
+      const BADGE_H = 0.08; // matches the credit strip on the flat illustrations
+      creditImg.setAttribute("height", BADGE_H);
+      creditImg.setAttribute("width", BADGE_H * v._badge.aspect);
+      creditImg.setAttribute("src", v._badge.url);
     } else {
+      creditWrap.setAttribute("visible", "false");
+      creditWrap.setAttribute("scale", "0.001 0.001 0.001");
       modelEntity.setAttribute("visible", "false");
       charEntity.setAttribute("visible", "true");
 
@@ -1404,6 +1475,22 @@
     } else {
       captionWrap.setAttribute("visible", "false");
     }
+
+    // the .glb model's author credit pops in with the caption timing
+    if (v.model) {
+      creditWrap.setAttribute("visible", "true");
+      creditWrap.setAttribute("scale", "0.001 0.001 0.001");
+      setTimeout(() => {
+        animate({
+          duration: 500,
+          onUpdate: (e) => {
+            if (myCaption !== captionAnimId) return;
+            const s = Math.max(0.001, e);
+            creditWrap.setAttribute("scale", `${s} ${s} ${s}`);
+          },
+        });
+      }, 900);
+    }
   }
 
   function hideContent() {
@@ -1423,6 +1510,8 @@
     bubbleWrap.setAttribute("scale", "0.001 0.001 0.001");
     captionWrap.setAttribute("visible", "false");
     captionWrap.setAttribute("scale", "0.001 0.001 0.001");
+    creditWrap.setAttribute("visible", "false");
+    creditWrap.setAttribute("scale", "0.001 0.001 0.001");
     stopSparkles();
     sparkleEls.forEach((el) => el.setAttribute("visible", "false"));
   }
