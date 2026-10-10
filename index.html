@@ -503,6 +503,7 @@
       // illustrations look the same from any angle so they just always
       // face the camera).
       this.billboard = true;
+      this._lastBillboard = true;
       // how long the *target* orientation (this frame's fresh worldQ, before
       // smoothing) has stayed close to what we're already showing -- used to
       // tell a genuinely settled pose apart from one that's still catching up.
@@ -557,6 +558,14 @@
       if (!this._ready) this._up.copy(upRaw);
       else this._up.lerp(upRaw, 1 - Math.exp(-step / 0.3));
       const up = this._up.clone().normalize();
+
+      // Switching from the upright model back to a flat illustration: the
+      // orientation would otherwise ease from the model's marker-fixed pose to
+      // camera-facing over a second or so, visibly spinning the incoming
+      // illustration and its sparkles. Drop the old heading and snap instead.
+      const snapToBillboard = this.billboard && !this._lastBillboard;
+      this._lastBillboard = this.billboard;
+      if (snapToBillboard) this._fwd.set(0, 0, 0);
 
       // ---- 3. forward direction ----
       if (this.billboard) {
@@ -624,7 +633,8 @@
       const angleDiffDeg = THREE.MathUtils.radToDeg(this._worldQ.angleTo(worldQ));
       this._stableMs = angleDiffDeg < 2 ? this._stableMs + step * 1000 : 0;
 
-      this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
+      if (snapToBillboard) this._worldQ.copy(worldQ);
+      else this._worldQ.slerp(worldQ, 1 - Math.exp(-step / 0.4));
       obj.quaternion.copy(parentQ).invert().multiply(this._worldQ);
     },
     // True once the orientation has stopped visibly changing for `holdMs`.
