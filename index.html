@@ -948,9 +948,7 @@
     // 004_ろき.png
     { img: "#charImg4", w: 0.81, h: 1.15, plain: true, author: "ろき" },
     // 005_ori.png
-    // hidden: true on 005-013 below -- not public yet, planned for 10/11;
-    // still reachable via ?illust=N for testing until then.
-    { img: "#charImg5", w: 0.92, h: 1.15, plain: true, author: "ori", hidden: true },
+    { img: "#charImg5", w: 0.92, h: 1.15, plain: true, author: "ori" },
     // 006_笹かま.png
     {
       img: "#charImg6",
@@ -958,10 +956,9 @@
       h: 0.949,
       text: "いたずらすんで～！",
       author: "笹かま",
-      hidden: true,
     },
     // 007_ぽすと.png
-    { img: "#charImg7", w: 1, h: 1, text: "ちべりぁっ！", author: "ぽすと", hidden: true },
+    { img: "#charImg7", w: 1, h: 1, text: "ちべりぁっ！", author: "ぽすと" },
     // 008_カエル.png
     {
       img: "#charImg8",
@@ -970,15 +967,13 @@
       plain: true,
       title: "変わらぬ青に",
       author: "カエル",
-      hidden: true,
     },
     // 009_みそるあまど.png
-    { img: "#charImg9", w: 0.77, h: 1.15, plain: true, author: "みそるあまど", hidden: true },
+    { img: "#charImg9", w: 0.77, h: 1.15, plain: true, author: "みそるあまど" },
     // 010_Mk².png
-    { img: "#charImg10", w: 1, h: 0.818, plain: true, author: "Mk²", hidden: true },
-    // 011_めんだこ.glb -- still reachable via ?illust=11 for testing, but
-    // skipped in the normal ◀ ▶ rotation until it's ready to ship.
-    { model: true, hidden: true, author: "めんだこ" },
+    { img: "#charImg10", w: 1, h: 0.818, plain: true, author: "Mk²" },
+    // 011_めんだこ.glb
+    { model: true, author: "めんだこ" },
     // 012_トマト味のイワシ.png
     {
       img: "#charImg11",
@@ -986,12 +981,11 @@
       h: 1.15,
       plain: true,
       author: "トマト味のイワシ",
-      hidden: true,
     },
     // 013_なっつ.png
-    { img: "#charImg12", w: 1, h: 1, plain: true, author: "なっつ", hidden: true },
+    { img: "#charImg12", w: 1, h: 1, plain: true, author: "なっつ" },
     // 014_ぽんた.png
-    { img: "#charImg13", w: 0.813, h: 1.15, plain: true, author: "ぽんた", hidden: true },
+    { img: "#charImg13", w: 0.813, h: 1.15, plain: true, author: "ぽんた" },
   ];
   const BUBBLE_W = 0.9; // world width of the speech bubble plane
   const CAPTION_W = 0.9; // world width of the plain-caption pill
@@ -1470,11 +1464,7 @@
 
   // ◀ ▶ : switch which illustration appears
   function switchVariant(dir) {
-    let next = currentVariant;
-    do {
-      next = (next + dir + VARIANTS.length) % VARIANTS.length;
-    } while (VARIANTS[next].hidden && next !== currentVariant);
-    currentVariant = next;
+    currentVariant = (currentVariant + dir + VARIANTS.length) % VARIANTS.length;
     applyVariant(VARIANTS[currentVariant]);
     if (shownNow) showContent();
     else showToast(`イラスト ${currentVariant + 1} / ${VARIANTS.length}`);
